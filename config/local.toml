@@ -1,0 +1,15 @@
+pulsar_url = "pulsar://localhost:6650"
+pulsar_admin_url = "http://127.0.0.1:8080"
+default_tenant = "public"
+
+[auth]
+type = "Token"
+[auth.args]
+token = ""
+
+# [auth]
+# type = "OAuth"
+# [auth.args]
+# issuer_url = ""
+# audience = ""
+# credentials_file_url = ""
