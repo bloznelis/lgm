@@ -1,13 +1,10 @@
 use core::fmt;
-use futures::{StreamExt, TryStreamExt};
+use futures::TryStreamExt;
 use pulsar::consumer::InitialPosition;
 use pulsar::{Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::block::{Position, Title};
-use reqwest;
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt::Display,
     io,
     string::FromUtf8Error,
     sync::{
@@ -17,18 +14,15 @@ use std::{
     thread,
     time::Duration,
 };
-use tokio;
 use tokio::sync::{oneshot, Mutex};
-use tokio::task::JoinHandle;
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
-    backend::{Backend, CrosstermBackend},
-    layout::Rect,
+    backend::CrosstermBackend,
     prelude::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
     widgets::{Block, BorderType, Borders, List, ListState, Padding, Paragraph},
@@ -90,7 +84,6 @@ struct Topic {
 enum ControlEvent {
     Enter,
     Back,
-    Backspace,
     Up,
     Down,
     Cmd,
@@ -178,11 +171,12 @@ fn listen_for_control(sender: Sender<AppEvent>) {
                 KeyCode::Char(any) => Some(AppEvent::Input(any.to_string())),
                 _ => None,
             },
-            // Event::Resize(_, _) => sender.send(AppEvent::ScreenResize)?,
             _ => None,
         };
 
-        event.map(|event| sender.send(event).unwrap());
+        if let Some(event) = event {
+            sender.send(event).unwrap()
+        }
     }
 }
 
@@ -200,13 +194,13 @@ async fn main() -> Result<(), reqwest::Error> {
 
     let initial_tenants = fetch_tenants().await?;
 
-    let mut builder = Pulsar::builder("pulsar://127.0.0.1:6650".to_string(), TokioExecutor);
+    let builder = Pulsar::builder("pulsar://127.0.0.1:6650".to_string(), TokioExecutor);
     let pulsar = builder.build().await.unwrap();
     let pulsar = Arc::new(Mutex::new(pulsar));
 
     let (sender, receiver): (Sender<AppEvent>, Receiver<AppEvent>) = channel();
     let control_sender = sender.clone();
-    let handle = thread::spawn(move || listen_for_control(control_sender)); //can we use tokio thread here?
+    let _handle = thread::spawn(move || listen_for_control(control_sender)); //can we use tokio thread here?
 
     let mut app = App {
         active_element: Element::ContentView,
@@ -221,11 +215,11 @@ async fn main() -> Result<(), reqwest::Error> {
     };
 
     loop {
-        terminal.draw(|f| draw(f, &mut app)).unwrap();
+        terminal.draw(|f| draw(f, &app)).unwrap();
         if let Ok(event) = receiver.recv_timeout(Duration::from_millis(100)) {
             match event {
-                AppEvent::Control(ControlEvent::Subscribe) => match app.active_resource {
-                    Resource::Topics => {
+                AppEvent::Control(ControlEvent::Subscribe) => {
+                    if let Resource::Topics = app.active_resource {
                         if let Some(cursor) = app.content_cursor {
                             let topic = Topic {
                                 value: app.contents[cursor].clone(),
@@ -241,9 +235,7 @@ async fn main() -> Result<(), reqwest::Error> {
                             });
                         }
                     }
-                    _ => {}
-                },
-                AppEvent::Control(ControlEvent::Backspace) => app.input = String::new(),
+                }
                 AppEvent::Control(ControlEvent::Up) => {
                     app.content_cursor = match app.content_cursor {
                         Some(cursor) => {
@@ -272,7 +264,7 @@ async fn main() -> Result<(), reqwest::Error> {
                     Resource::Tenants => {}
                     Resource::Namespaces => {
                         let tenants = fetch_tenants().await?;
-                        if tenants.len() > 0 {
+                        if !tenants.is_empty() {
                             app.content_cursor = Some(0);
                         } else {
                             app.content_cursor = None;
@@ -283,7 +275,7 @@ async fn main() -> Result<(), reqwest::Error> {
                     Resource::Topics => {
                         if let Some(last_tenant) = &app.last_tenant {
                             let namespaces = fetch_namespaces(last_tenant).await?;
-                            if namespaces.len() > 0 {
+                            if !namespaces.is_empty() {
                                 app.content_cursor = Some(0);
                             } else {
                                 app.content_cursor = None;
@@ -295,7 +287,7 @@ async fn main() -> Result<(), reqwest::Error> {
                     Resource::Subscriptions => {
                         if let Some(last_namespace) = &app.last_namespace {
                             let topics = fetch_topics(last_namespace).await?;
-                            if topics.len() > 0 {
+                            if !topics.is_empty() {
                                 app.content_cursor = Some(0);
                             } else {
                                 app.content_cursor = None;
@@ -308,7 +300,7 @@ async fn main() -> Result<(), reqwest::Error> {
                     Resource::Listening => {
                         if let Some(last_namespace) = &app.last_namespace {
                             let topics = fetch_topics(last_namespace).await?;
-                            if topics.len() > 0 {
+                            if !topics.is_empty() {
                                 app.content_cursor = Some(0);
                             } else {
                                 app.content_cursor = None;
@@ -323,17 +315,18 @@ async fn main() -> Result<(), reqwest::Error> {
                         }
                     }
                 },
-                AppEvent::SubscriptionEvent(event) => match app.active_resource {
-                    Resource::Listening => app.contents.push(event.content),
-                    _ => {}
-                },
+                AppEvent::SubscriptionEvent(event) => {
+                    if let Resource::Listening = app.active_resource {
+                        app.contents.push(event.content)
+                    }
+                }
                 AppEvent::Input(input) => {
                     if app.active_element == Element::ResourceSelector {
                         //todo: this is very stupid, use char array maybe?
                         let mut str = app.input.to_owned();
                         str.push_str(&input.to_string());
 
-                        app.input = String::from(str)
+                        app.input = str
                     }
                 }
                 AppEvent::Control(ControlEvent::Terminate) => break,
@@ -347,7 +340,7 @@ async fn main() -> Result<(), reqwest::Error> {
                             if let Some(cursor) = app.content_cursor {
                                 let tenant = app.contents[cursor].clone();
                                 let namespaces = fetch_namespaces(&tenant).await?;
-                                if namespaces.len() > 0 {
+                                if !namespaces.is_empty() {
                                     app.content_cursor = Some(0);
                                 } else {
                                     app.content_cursor = None;
@@ -361,7 +354,7 @@ async fn main() -> Result<(), reqwest::Error> {
                             if let Some(cursor) = app.content_cursor {
                                 let namespace = app.contents[cursor].clone();
                                 let topics = fetch_topics(&namespace).await?;
-                                if topics.len() > 0 {
+                                if !topics.is_empty() {
                                     app.content_cursor = Some(0);
                                 } else {
                                     app.content_cursor = None;
@@ -376,7 +369,7 @@ async fn main() -> Result<(), reqwest::Error> {
                             if let Some(cursor) = app.content_cursor {
                                 let topic = app.contents[cursor].clone();
                                 let subscriptions = fetch_subscriptions(&topic).await?;
-                                if subscriptions.len() > 0 {
+                                if !subscriptions.is_empty() {
                                     app.content_cursor = Some(0);
                                 } else {
                                     app.content_cursor = None;
@@ -442,28 +435,15 @@ fn draw(frame: &mut Frame, app: &App) {
 
     let header = Paragraph::new(
         r#"
-    .-.    .-.    .-.    _     ____ __  __,
-   /   \  /   \  /   \  | |   / ___|  \/  |
-  | o o || o o || o o | | |  | |  _| |\/| |
-  |  ^  ||  ^  ||  ^  | | |__| |_| | |  | |
-   \___/  \___/  \___/  |_____\____|_|  |_|
+  .-.    .-.    .-.    _     ____ __  __,
+ /   \  /   \  /   \  | |   / ___|  \/  |
+| o o || o o || o o | | |  | |  _| |\/| |
+|  ^  ||  ^  ||  ^  | | |__| |_| | |  | |
+ \___/  \___/  \___/  |_____\____|_|  |_|
 "#,
     )
     .alignment(Alignment::Right)
     .style(Style::default().fg(Color::LightGreen));
-
-    let input_borders = match app.active_element {
-        Element::ResourceSelector => BorderType::Double,
-        Element::ContentView => BorderType::Plain,
-    };
-
-    let input_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(input_borders);
-
-    let input_paragraph = Paragraph::new(format!("> {}", app.input))
-        .alignment(Alignment::Left)
-        .block(input_block);
 
     let content_borders = match app.active_element {
         Element::ResourceSelector => BorderType::Plain,
@@ -488,7 +468,7 @@ fn draw(frame: &mut Frame, app: &App) {
         .borders(Borders::NONE)
         .padding(Padding::new(1, 1, 1, 1));
 
-    let help_item_next = HelpItem::new("<cr>", "next");
+    let help_item_next = HelpItem::new("<enter>", "next");
     let help_item_bac = HelpItem::new("<esc>", "back");
     let help_item_listen = HelpItem::new("<c-s>", "listen");
 
@@ -503,7 +483,6 @@ fn draw(frame: &mut Frame, app: &App) {
 
     frame.render_widget(help_list, header_chunks[0]);
     frame.render_widget(header, header_chunks[1]);
-    // frame.render_widget(input_paragraph, chunks[1]);
     frame.render_stateful_widget(content_list, chunks[1], &mut state);
 }
 
