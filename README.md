@@ -1,8 +1,9 @@
 ## LGM
-*little green men*
-https://en.wikipedia.org/wiki/LGM-1
+Puslar cluser managment app in terminal.
+> The signal, a series of sharp pulses that came every 1.3 seconds, seemed too fast to be coming from anything like a star. Bell and Hewish jokingly called the new source LGM-1, for “Little Green Men.”
+> [[0]](https://www.aps.org/publications/apsnews/200602/history.cfm)
 
-Puslar cluser managment TUI app.
+
 
 
 ### TODO
