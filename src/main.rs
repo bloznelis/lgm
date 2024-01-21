@@ -4,6 +4,7 @@ use pulsar::consumer::InitialPosition;
 use pulsar::{Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor};
 use ratatui::text::{Line, Span, Text};
 use serde::{Deserialize, Serialize};
+use std::rc::Rc;
 use std::{
     io,
     string::FromUtf8Error,
@@ -240,7 +241,7 @@ async fn main() -> Result<(), reqwest::Error> {
                     app.content_cursor = match app.content_cursor {
                         Some(cursor) => {
                             if cursor == 0 {
-                                Some(app.contents.len() - 1)
+                                Some(app.contents.len().saturating_sub(1))
                             } else {
                                 Some(cursor - 1)
                             }
@@ -251,7 +252,7 @@ async fn main() -> Result<(), reqwest::Error> {
                 AppEvent::Control(ControlEvent::Down) => {
                     app.content_cursor = match app.content_cursor {
                         Some(cursor) => {
-                            if cursor == app.contents.len() - 1 {
+                            if cursor == app.contents.len().saturating_sub(1) {
                                 Some(0)
                             } else {
                                 Some(cursor + 1)
@@ -367,16 +368,18 @@ async fn main() -> Result<(), reqwest::Error> {
                         }
                         Resource::Topics => {
                             if let Some(cursor) = app.content_cursor {
-                                let topic = app.contents[cursor].clone();
-                                let subscriptions = fetch_subscriptions(&topic).await?;
-                                if !subscriptions.is_empty() {
-                                    app.content_cursor = Some(0);
-                                } else {
-                                    app.content_cursor = None;
-                                };
-                                app.contents = subscriptions;
-                                app.active_resource = Resource::Subscriptions;
-                                app.last_topic = Some(topic)
+                                if !app.contents.is_empty() {
+                                    let topic = app.contents[cursor].clone();
+                                    let subscriptions = fetch_subscriptions(&topic).await?;
+                                    if !subscriptions.is_empty() {
+                                        app.content_cursor = Some(0);
+                                    } else {
+                                        app.content_cursor = None;
+                                    };
+                                    app.contents = subscriptions;
+                                    app.active_resource = Resource::Subscriptions;
+                                    app.last_topic = Some(topic)
+                                }
                             }
                         }
                         Resource::Subscriptions => {}
@@ -423,7 +426,6 @@ fn draw(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(7),
-            // Constraint::Length(3),
             Constraint::Percentage(100),
         ])
         .split(frame.size());
@@ -432,6 +434,14 @@ fn draw(frame: &mut Frame, app: &App) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(chunks[0]);
+
+    let main_chunks = match app.active_resource {
+        Resource::Listening => Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(chunks[1]),
+        _ => Rc::new([chunks[1]]),
+    };
 
     let header = Paragraph::new(
         r#"
@@ -447,7 +457,7 @@ fn draw(frame: &mut Frame, app: &App) {
 
     let content_borders = match app.active_element {
         Element::ResourceSelector => BorderType::Plain,
-        Element::ContentView => BorderType::Double,
+        Element::ContentView => BorderType::Plain,
     };
 
     let content_block = Block::default()
@@ -468,14 +478,17 @@ fn draw(frame: &mut Frame, app: &App) {
         .borders(Borders::NONE)
         .padding(Padding::new(1, 1, 1, 1));
 
-    let help_item_next = HelpItem::new("<enter>", "next");
     let help_item_bac = HelpItem::new("<esc>", "back");
     let help_item_listen = HelpItem::new("<c-s>", "listen");
 
     let help: Vec<HelpItem> = match &app.active_resource {
-        Resource::Tenants => vec![help_item_next],
-        Resource::Namespaces => vec![help_item_bac, help_item_next],
-        Resource::Topics => vec![help_item_listen, help_item_next],
+        Resource::Tenants => vec![HelpItem::new("<enter>", "namespaces")],
+        Resource::Namespaces => vec![help_item_bac, HelpItem::new("<enter>", "topics")],
+        Resource::Topics => vec![
+            help_item_bac,
+            help_item_listen,
+            HelpItem::new("<enter>", "subscriptions"),
+        ],
         Resource::Subscriptions => vec![help_item_bac],
         Resource::Listening => vec![help_item_bac],
     };
@@ -483,7 +496,31 @@ fn draw(frame: &mut Frame, app: &App) {
 
     frame.render_widget(help_list, header_chunks[0]);
     frame.render_widget(header, header_chunks[1]);
-    frame.render_stateful_widget(content_list, chunks[1], &mut state);
+
+    match app.active_resource {
+        Resource::Listening => {
+            let selected = app
+                .content_cursor
+                .and_then(|cursor| app.contents.get(cursor))
+                .map(|content| serde_json::from_str::<serde_json::Value>(content).unwrap())
+                .map(|content| serde_json::to_string_pretty(&content).unwrap());
+
+            let json_block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Plain)
+                .title("Preview")
+                .title_alignment(Alignment::Center)
+                .title_style(Style::default().fg(Color::Green))
+                .padding(Padding::new(2, 2, 1, 1));
+
+            let json_preview = Paragraph::new(selected.unwrap_or(String::from("nothing to show")))
+                .block(json_block);
+
+            frame.render_stateful_widget(content_list, main_chunks[0], &mut state);
+            frame.render_widget(json_preview, main_chunks[1]);
+        }
+        _ => frame.render_stateful_widget(content_list, main_chunks[0], &mut state),
+    };
 }
 
 #[derive(Clone)]
