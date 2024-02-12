@@ -1,13 +1,18 @@
+pub mod auth;
+
 use core::fmt;
+use auth::{auth, read_config, Token};
 use futures::TryStreamExt;
+use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
 use pulsar::consumer::InitialPosition;
 use pulsar::{Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor};
 use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::Wrap;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::rc::Rc;
 use std::{
     io,
-    string::FromUtf8Error,
     sync::{
         mpsc::{channel, Receiver, Sender},
         Arc,
@@ -56,6 +61,7 @@ struct App {
     active_resource: Resource,
     contents: Vec<String>,
     content_cursor: Option<usize>,
+    last_cursor: Option<usize>,
     input: String,
     last_tenant: Option<String>,
     last_namespace: Option<String>,
@@ -65,16 +71,16 @@ struct App {
 
 #[derive(Serialize, Deserialize)]
 struct TopicEvent {
-    content: String,
+    content: Value,
 }
 
 impl DeserializeMessage for TopicEvent {
-    // type Output = Result<TopicEvent, serde_json::Error>;
-    type Output = Result<TopicEvent, FromUtf8Error>;
+    type Output = Result<TopicEvent, serde_json::Error>;
+    // type Output = Result<TopicEvent, FromUtf8Error>;
 
     fn deserialize_message(payload: &Payload) -> Self::Output {
-        // serde_json::from_slice(&payload.data)
-        String::from_utf8(payload.data.clone()).map(|content| TopicEvent { content })
+        serde_json::from_slice::<Value>(&payload.data)
+            .map(|content| TopicEvent { content: content })
     }
 }
 
@@ -126,6 +132,7 @@ async fn listen_to_topic(
             msg = consumer.try_next() => {
                 match msg {
                     Ok(Some(message)) => {
+                        let a = &message.metadata().properties.iter().map(|keyvalue| format!("{}:{}", keyvalue.key, keyvalue.value)).collect::<Vec<String>>();
                         let topic_event = message.deserialize().unwrap();
                         let _ = event_sender.send(AppEvent::SubscriptionEvent(topic_event));
 
@@ -192,10 +199,22 @@ async fn main() -> Result<(), reqwest::Error> {
     let mut terminal = Terminal::new(backend).unwrap();
 
     env_logger::init();
+    let auth_cfg = read_config().unwrap();
 
-    let initial_tenants = fetch_tenants().await?;
+    let token = auth(auth_cfg).await?;
 
-    let builder = Pulsar::builder("pulsar://127.0.0.1:6650".to_string(), TokioExecutor);
+    //TODO: unify pulsar and pulsar admin client auth configuration
+    //Get the sensitive info from developers key
+    let builder = Pulsar::builder(
+        "pulsar+ssl://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud:6651".to_string(),
+        TokioExecutor,
+    )
+    .with_auth_provider(OAuth2Authentication::client_credentials(OAuth2Params {
+        issuer_url: "https://auth.streamnative.cloud/".to_string(),
+        credentials_url: "file:///home/lukas/.streamnative-developers-key.json".to_string(), // Absolute path of your downloaded key file
+        audience: Some("urn:sn:pulsar:o-w0y8l:staging".to_string()),
+        scope: None,
+    }));
     let pulsar = builder.build().await.unwrap();
     let pulsar = Arc::new(Mutex::new(pulsar));
 
@@ -205,11 +224,12 @@ async fn main() -> Result<(), reqwest::Error> {
 
     let mut app = App {
         active_element: Element::ContentView,
-        active_resource: Resource::Tenants,
-        contents: initial_tenants,
+        active_resource: Resource::Namespaces,
+        contents: fetch_namespaces(&"flowie".to_string(), &token).await?,
         content_cursor: Some(0),
+        last_cursor: None,
         input: String::from(""),
-        last_tenant: None,
+        last_tenant: Some("flowie".to_string()),
         last_namespace: None,
         last_topic: None,
         active_sub_handle: None,
@@ -264,9 +284,9 @@ async fn main() -> Result<(), reqwest::Error> {
                 AppEvent::Control(ControlEvent::Back) => match app.active_resource {
                     Resource::Tenants => {}
                     Resource::Namespaces => {
-                        let tenants = fetch_tenants().await?;
+                        let tenants = fetch_tenants(&token).await?;
                         if !tenants.is_empty() {
-                            app.content_cursor = Some(0);
+                            app.content_cursor = app.last_cursor.or(Some(0))
                         } else {
                             app.content_cursor = None;
                         };
@@ -275,9 +295,9 @@ async fn main() -> Result<(), reqwest::Error> {
                     }
                     Resource::Topics => {
                         if let Some(last_tenant) = &app.last_tenant {
-                            let namespaces = fetch_namespaces(last_tenant).await?;
+                            let namespaces = fetch_namespaces(last_tenant, &token).await?;
                             if !namespaces.is_empty() {
-                                app.content_cursor = Some(0);
+                                app.content_cursor = app.last_cursor.or(Some(0))
                             } else {
                                 app.content_cursor = None;
                             };
@@ -287,9 +307,9 @@ async fn main() -> Result<(), reqwest::Error> {
                     }
                     Resource::Subscriptions => {
                         if let Some(last_namespace) = &app.last_namespace {
-                            let topics = fetch_topics(last_namespace).await?;
+                            let topics = fetch_topics(last_namespace, &token).await?;
                             if !topics.is_empty() {
-                                app.content_cursor = Some(0);
+                                app.content_cursor = app.last_cursor.or(Some(0))
                             } else {
                                 app.content_cursor = None;
                             };
@@ -300,9 +320,9 @@ async fn main() -> Result<(), reqwest::Error> {
                     }
                     Resource::Listening => {
                         if let Some(last_namespace) = &app.last_namespace {
-                            let topics = fetch_topics(last_namespace).await?;
+                            let topics = fetch_topics(last_namespace, &token).await?;
                             if !topics.is_empty() {
-                                app.content_cursor = Some(0);
+                                app.content_cursor = app.last_cursor.or(Some(0))
                             } else {
                                 app.content_cursor = None;
                             };
@@ -318,7 +338,11 @@ async fn main() -> Result<(), reqwest::Error> {
                 },
                 AppEvent::SubscriptionEvent(event) => {
                     if let Resource::Listening = app.active_resource {
-                        app.contents.push(event.content)
+                        app.contents
+                            .push(serde_json::to_string_pretty(&event.content).unwrap());
+                        if app.content_cursor.is_none() {
+                            app.content_cursor = Some(0)
+                        }
                     }
                 }
                 AppEvent::Input(input) => {
@@ -340,7 +364,8 @@ async fn main() -> Result<(), reqwest::Error> {
                         Resource::Tenants => {
                             if let Some(cursor) = app.content_cursor {
                                 let tenant = app.contents[cursor].clone();
-                                let namespaces = fetch_namespaces(&tenant).await?;
+                                let namespaces = fetch_namespaces(&tenant, &token).await?;
+                                app.last_cursor = app.content_cursor;
                                 if !namespaces.is_empty() {
                                     app.content_cursor = Some(0);
                                 } else {
@@ -354,7 +379,8 @@ async fn main() -> Result<(), reqwest::Error> {
                         Resource::Namespaces => {
                             if let Some(cursor) = app.content_cursor {
                                 let namespace = app.contents[cursor].clone();
-                                let topics = fetch_topics(&namespace).await?;
+                                let topics = fetch_topics(&namespace, &token).await?;
+                                app.last_cursor = app.content_cursor;
                                 if !topics.is_empty() {
                                     app.content_cursor = Some(0);
                                 } else {
@@ -370,7 +396,8 @@ async fn main() -> Result<(), reqwest::Error> {
                             if let Some(cursor) = app.content_cursor {
                                 if !app.contents.is_empty() {
                                     let topic = app.contents[cursor].clone();
-                                    let subscriptions = fetch_subscriptions(&topic).await?;
+                                    let subscriptions = fetch_subscriptions(&topic, &token).await?;
+                                    app.last_cursor = app.content_cursor;
                                     if !subscriptions.is_empty() {
                                         app.content_cursor = Some(0);
                                     } else {
@@ -390,12 +417,12 @@ async fn main() -> Result<(), reqwest::Error> {
                             app.input = String::new();
                             app.active_element = Element::ContentView;
                             app.active_resource = Resource::Tenants;
-                            app.contents = fetch_tenants().await?;
+                            app.contents = fetch_tenants(&token).await?;
                         }
                         "namespaces" => {
                             if let Some(cursor) = app.content_cursor {
                                 let tenant = app.contents[cursor].clone();
-                                let topics = fetch_namespaces(&tenant).await?;
+                                let topics = fetch_namespaces(&tenant, &token).await?;
                                 app.content_cursor = None;
                                 app.contents = topics;
                                 app.active_resource = Resource::Namespaces;
@@ -424,10 +451,7 @@ async fn main() -> Result<(), reqwest::Error> {
 fn draw(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(7),
-            Constraint::Percentage(100),
-        ])
+        .constraints([Constraint::Length(7), Constraint::Percentage(100)])
         .split(frame.size());
 
     let header_chunks = Layout::default()
@@ -438,7 +462,8 @@ fn draw(frame: &mut Frame, app: &App) {
     let main_chunks = match app.active_resource {
         Resource::Listening => Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            // .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([Constraint::Percentage(100)])
             .split(chunks[1]),
         _ => Rc::new([chunks[1]]),
     };
@@ -514,10 +539,11 @@ fn draw(frame: &mut Frame, app: &App) {
                 .padding(Padding::new(2, 2, 1, 1));
 
             let json_preview = Paragraph::new(selected.unwrap_or(String::from("nothing to show")))
-                .block(json_block);
+                .block(json_block)
+                .wrap(Wrap { trim: false });
 
             frame.render_stateful_widget(content_list, main_chunks[0], &mut state);
-            frame.render_widget(json_preview, main_chunks[1]);
+            // frame.render_widget(json_preview, main_chunks[1]);
         }
         _ => frame.render_stateful_widget(content_list, main_chunks[0], &mut state),
     };
@@ -554,44 +580,48 @@ impl From<HelpItem> for Text<'_> {
     }
 }
 
-async fn fetch_tenants() -> Result<Vec<String>, reqwest::Error> {
-    let addr = "http://127.0.0.1:8080";
-    let response = reqwest::get(format!("{}/admin/v2/tenants", addr)).await?;
+async fn fetch_anything(url: String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get(url)
+        .bearer_auth(&token.access_token)
+        .send()
+        .await?;
 
-    let tenants: Vec<String> = response.json().await?;
+    let array: Vec<String> = response.json().await?;
 
-    Ok(tenants)
+    Ok(array)
 }
 
-async fn fetch_namespaces(tenant: &String) -> Result<Vec<String>, reqwest::Error> {
-    let addr = "http://127.0.0.1:8080";
-    let response = reqwest::get(format!("{}/admin/v2/namespaces/{}", addr, tenant)).await?;
+async fn fetch_tenants(token: &Token) -> Result<Vec<String>, reqwest::Error> {
+    let addr = "https://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud";
 
-    let namespaces: Vec<String> = response.json().await?;
-
-    Ok(namespaces)
+    fetch_anything(format!("{}/admin/v2/tenants", addr), token).await
 }
 
-async fn fetch_topics(namespace: &String) -> Result<Vec<String>, reqwest::Error> {
-    let addr = "http://127.0.0.1:8080";
-    let response =
-        reqwest::get(format!("{}/admin/v2/namespaces/{}/topics", addr, namespace)).await?;
+async fn fetch_namespaces(tenant: &String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
+    let addr = "https://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud";
 
-    let topics: Vec<String> = response.json().await?;
-
-    Ok(topics)
+    fetch_anything(format!("{}/admin/v2/namespaces/{}", addr, tenant), token).await
 }
 
-async fn fetch_subscriptions(topic: &String) -> Result<Vec<String>, reqwest::Error> {
-    let addr = "http://127.0.0.1:8080";
+async fn fetch_topics(namespace: &String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
+    let addr = "https://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud";
+
+    fetch_anything(
+        format!("{}/admin/v2/namespaces/{}/topics", addr, namespace),
+        token,
+    )
+    .await
+}
+
+async fn fetch_subscriptions(topic: &String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
+    let addr = "https://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud";
     let topic = topic.strip_prefix("persistent://").unwrap_or(topic);
-    let response = reqwest::get(format!(
-        "{}/admin/v2/persistent/{}/subscriptions",
-        addr, topic
-    ))
-    .await?;
 
-    let subscriptions: Vec<String> = response.json().await?;
-
-    Ok(subscriptions)
+    fetch_anything(
+        format!("{}/admin/v2/persistent/{}/subscriptions", addr, topic),
+        token,
+    )
+    .await
 }

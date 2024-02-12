@@ -1,0 +1,4 @@
+token_url = "https://auth.streamnative.cloud/oauth/token"
+client_id = ""
+client_secret = ""
+audience = ""
