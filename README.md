@@ -19,3 +19,5 @@ Puslar cluser managment app in terminal.
 * Some kind of dialog modal for confirmation and errors
 * Randomize subscription name to avoid collisions
 * `last_cursor` needs to be stored in a map, where key is a resource type e.g.: {tenants -> 2, namespaces -> 5}
+* Check status codes returned from the Pulsar Admin API.
+    * For example if it's Unauthorized we should try to parse the body

@@ -7,6 +7,7 @@ use futures::TryStreamExt;
 use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
 use pulsar::consumer::InitialPosition;
 use pulsar::{Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor};
+use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::Wrap;
 use serde::{Deserialize, Serialize};
@@ -59,7 +60,18 @@ enum Element {
     ContentView,
 }
 
+struct ErrorToShow {
+    message: String,
+}
+
+impl ErrorToShow {
+    fn new(message: String) -> Self {
+        ErrorToShow { message }
+    }
+}
+
 struct App {
+    error_to_show: Option<ErrorToShow>,
     active_element: Element,
     active_resource: Resource,
     contents: Vec<String>,
@@ -82,8 +94,7 @@ impl DeserializeMessage for TopicEvent {
     // type Output = Result<TopicEvent, FromUtf8Error>;
 
     fn deserialize_message(payload: &Payload) -> Self::Output {
-        serde_json::from_slice::<Value>(&payload.data)
-            .map(|content| TopicEvent { content: content })
+        serde_json::from_slice::<Value>(&payload.data).map(|content| TopicEvent { content })
     }
 }
 
@@ -198,7 +209,7 @@ async fn main() -> () {
 
     match run().await {
         Ok(_) => println!("bye!"),
-        Err(error) => eprintln!("Failed unexpectedlly. Reason: {:?}", error),
+        Err(error) => eprintln!("Failed unexpectedlly. Reason: {:?}", error.source()),
     }
 }
 
@@ -244,6 +255,7 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
     let _handle = thread::spawn(move || listen_for_control(control_sender)); //can we use tokio thread here?
 
     let mut app = App {
+        error_to_show: None,
         active_element: Element::ContentView,
         active_resource: Resource::Namespaces,
         contents: fetch_namespaces(&"flowie".to_string(), &token).await?,
@@ -259,6 +271,7 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
     loop {
         terminal.draw(|f| draw(f, &app).expect("Failed to draw"))?;
         if let Ok(event) = receiver.recv_timeout(Duration::from_millis(100)) {
+            app.error_to_show = None;
             match event {
                 AppEvent::Control(ControlEvent::Subscribe) => {
                     if let Resource::Topics = app.active_resource {
@@ -305,14 +318,22 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                 AppEvent::Control(ControlEvent::Back) => match app.active_resource {
                     Resource::Tenants => {}
                     Resource::Namespaces => {
-                        let tenants = fetch_tenants(&token).await?;
-                        if !tenants.is_empty() {
-                            app.content_cursor = app.last_cursor.or(Some(0))
-                        } else {
-                            app.content_cursor = None;
-                        };
-                        app.contents = tenants;
-                        app.active_resource = Resource::Tenants;
+                        let tenants = fetch_tenants(&token).await;
+                        match tenants {
+                            Ok(tenants) => {
+                                if !tenants.is_empty() {
+                                    app.content_cursor = app.last_cursor.or(Some(0))
+                                } else {
+                                    app.content_cursor = None;
+                                };
+                                app.contents = tenants;
+                                app.active_resource = Resource::Tenants;
+                            }
+                            Err(err) => {
+                                app.error_to_show =
+                                    Some(ErrorToShow::new(format!("Failed to fetch tenants :[\n {:?}", err)));
+                            }
+                        }
                     }
                     Resource::Topics => {
                         if let Some(last_tenant) = &app.last_tenant {
@@ -386,17 +407,19 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                     Element::ContentView => match app.active_resource {
                         Resource::Tenants => {
                             if let Some(cursor) = app.content_cursor {
-                                let tenant = app.contents[cursor].clone();
-                                let namespaces = fetch_namespaces(&tenant, &token).await?;
-                                app.last_cursor = app.content_cursor;
-                                if !namespaces.is_empty() {
-                                    app.content_cursor = Some(0);
-                                } else {
-                                    app.content_cursor = None;
-                                };
-                                app.contents = namespaces;
-                                app.active_resource = Resource::Namespaces;
-                                app.last_tenant = Some(tenant)
+                                if !app.contents.is_empty() {
+                                    let tenant = app.contents[cursor].clone();
+                                    let namespaces = fetch_namespaces(&tenant, &token).await?;
+                                    app.last_cursor = app.content_cursor;
+                                    if !namespaces.is_empty() {
+                                        app.content_cursor = Some(0);
+                                    } else {
+                                        app.content_cursor = None;
+                                    };
+                                    app.contents = namespaces;
+                                    app.active_resource = Resource::Namespaces;
+                                    app.last_tenant = Some(tenant)
+                                }
                             }
                         }
                         Resource::Namespaces => {
@@ -467,24 +490,81 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
     Ok({})
 }
 
+struct HeaderLayout {
+    help: Rect,
+    logo: Rect,
+}
+
+struct LayoutChunks {
+    header: HeaderLayout,
+    message: Option<Rect>,
+    main: Rect,
+}
+
 fn draw(frame: &mut Frame, app: &App) -> anyhow::Result<()> {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(7), Constraint::Percentage(100)])
-        .split(frame.size());
+    let layout_chunks = match app.error_to_show {
+        Some(_) => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(7),
+                    Constraint::Length(4),
+                    Constraint::Percentage(100),
+                ])
+                .split(frame.size());
 
-    let header_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(chunks[0]);
+            let header_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(chunks[0]);
 
-    let main_chunks = match app.active_resource {
-        Resource::Listening => Layout::default()
-            .direction(Direction::Horizontal)
-            // .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .constraints([Constraint::Percentage(100)])
-            .split(chunks[1]),
-        _ => Rc::new([chunks[1]]),
+            let main_chunks = match app.active_resource {
+                Resource::Listening => Layout::default()
+                    .direction(Direction::Horizontal)
+                    // .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .constraints([Constraint::Percentage(100)])
+                    .split(chunks[2]),
+                _ => Rc::new([chunks[2]]),
+            };
+
+            LayoutChunks {
+                header: HeaderLayout {
+                    help: header_chunks[0],
+                    logo: header_chunks[1],
+                },
+                message: Some(chunks[1].into()),
+                main: main_chunks[0],
+            }
+        }
+        None => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(7), Constraint::Percentage(100)])
+                .split(frame.size());
+
+            let header_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(chunks[0]);
+
+            let main_chunks = match app.active_resource {
+                Resource::Listening => Layout::default()
+                    .direction(Direction::Horizontal)
+                    // .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .constraints([Constraint::Percentage(100)])
+                    .split(chunks[1]),
+                _ => Rc::new([chunks[1]]),
+            };
+
+            LayoutChunks {
+                header: HeaderLayout {
+                    help: header_chunks[0],
+                    logo: header_chunks[1],
+                },
+                message: None,
+                main: main_chunks[0],
+            }
+        }
     };
 
     let header = Paragraph::new(
@@ -538,8 +618,22 @@ fn draw(frame: &mut Frame, app: &App) -> anyhow::Result<()> {
     };
     let help_list = List::new(help).block(help_block);
 
-    frame.render_widget(help_list, header_chunks[0]);
-    frame.render_widget(header, header_chunks[1]);
+    frame.render_widget(help_list, layout_chunks.header.help);
+    frame.render_widget(header, layout_chunks.header.logo);
+
+    if let Some(error_to_show) = app.error_to_show.as_ref() {
+        if let Some(rect_for_error) = layout_chunks.message {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick);
+            let error_message_paragraph = Paragraph::new(error_to_show.message.clone())
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(Color::Red))
+                .block(block);
+
+            frame.render_widget(error_message_paragraph, rect_for_error)
+        }
+    }
 
     match app.active_resource {
         Resource::Listening => {
@@ -564,10 +658,10 @@ fn draw(frame: &mut Frame, app: &App) -> anyhow::Result<()> {
                 .block(json_block)
                 .wrap(Wrap { trim: false });
 
-            frame.render_stateful_widget(content_list, main_chunks[0], &mut state);
+            frame.render_stateful_widget(content_list, layout_chunks.main, &mut state);
             // frame.render_widget(json_preview, main_chunks[1]);
         }
-        _ => frame.render_stateful_widget(content_list, main_chunks[0], &mut state),
+        _ => frame.render_stateful_widget(content_list, layout_chunks.main, &mut state),
     };
 
     Ok({})
