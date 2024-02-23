@@ -1,7 +1,8 @@
 pub mod auth;
 
-use core::fmt;
+use anyhow::{anyhow, Result};
 use auth::{auth, read_config, Token};
+use core::fmt;
 use futures::TryStreamExt;
 use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
 use pulsar::consumer::InitialPosition;
@@ -10,6 +11,8 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::Wrap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::io::Stdout;
+use std::panic;
 use std::rc::Rc;
 use std::{
     io,
@@ -109,7 +112,7 @@ async fn listen_to_topic(
     event_sender: Sender<AppEvent>,
     pulsar: Arc<Mutex<Pulsar<TokioExecutor>>>,
     mut control_channel: tokio::sync::oneshot::Receiver<()>,
-) {
+) -> anyhow::Result<()> {
     let mut consumer: Consumer<TopicEvent, TokioExecutor> = pulsar
         .lock()
         .await
@@ -124,19 +127,18 @@ async fn listen_to_topic(
         .with_subscription_type(SubType::Exclusive)
         .with_subscription("lgm_subscription")
         .build()
-        .await
-        .unwrap();
+        .await?;
 
     loop {
         tokio::select! {
             msg = consumer.try_next() => {
                 match msg {
                     Ok(Some(message)) => {
-                        let a = &message.metadata().properties.iter().map(|keyvalue| format!("{}:{}", keyvalue.key, keyvalue.value)).collect::<Vec<String>>();
-                        let topic_event = message.deserialize().unwrap();
+                        // let props = &message.metadata().properties.iter().map(|keyvalue| format!("{}:{}", keyvalue.key, keyvalue.value)).collect::<Vec<String>>();
+                        let topic_event = message.deserialize()?;
                         let _ = event_sender.send(AppEvent::SubscriptionEvent(topic_event));
 
-                        consumer.ack(&message).await.unwrap();
+                        consumer.ack(&message).await?;
 
                     },
                     Ok(None) => break,
@@ -153,7 +155,9 @@ async fn listen_to_topic(
         }
     }
 
-    consumer.close().await.unwrap();
+    consumer.close().await?;
+
+    Ok({})
 }
 
 fn listen_for_control(sender: Sender<AppEvent>) {
@@ -189,17 +193,34 @@ fn listen_for_control(sender: Sender<AppEvent>) {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), reqwest::Error> {
+async fn main() -> () {
+    env_logger::init();
+
+    match run().await {
+        Ok(_) => println!("bye!"),
+        Err(error) => eprintln!("Failed unexpectedlly. Reason: {:?}", error),
+    }
+}
+
+async fn run() -> anyhow::Result<()> {
     let mut stdout = io::stdout();
 
-    execute!(stdout, EnterAlternateScreen).unwrap();
-    enable_raw_mode().unwrap();
+    execute!(stdout, EnterAlternateScreen)?;
+    enable_raw_mode()?;
 
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend).unwrap();
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
-    env_logger::init();
-    let auth_cfg = read_config().unwrap();
+    update(&mut terminal).await?;
+
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+
+    Ok({})
+}
+
+async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Result<()> {
+    let auth_cfg = read_config()?;
 
     let token = auth(auth_cfg).await?;
 
@@ -215,7 +236,7 @@ async fn main() -> Result<(), reqwest::Error> {
         audience: Some("urn:sn:pulsar:o-w0y8l:staging".to_string()),
         scope: None,
     }));
-    let pulsar = builder.build().await.unwrap();
+    let pulsar = builder.build().await?;
     let pulsar = Arc::new(Mutex::new(pulsar));
 
     let (sender, receiver): (Sender<AppEvent>, Receiver<AppEvent>) = channel();
@@ -236,7 +257,7 @@ async fn main() -> Result<(), reqwest::Error> {
     };
 
     loop {
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &app).expect("Failed to draw"))?;
         if let Ok(event) = receiver.recv_timeout(Duration::from_millis(100)) {
             match event {
                 AppEvent::Control(ControlEvent::Subscribe) => {
@@ -330,7 +351,9 @@ async fn main() -> Result<(), reqwest::Error> {
                             app.contents = topics;
                             app.active_resource = Resource::Topics;
                             if let Some(sub) = app.active_sub_handle {
-                                sub.send(()).unwrap()
+                                sub.send({}).map_err(|()| {
+                                    anyhow!("Failed to send termination singal to subscription")
+                                })?
                             }
                             app.active_sub_handle = None
                         }
@@ -339,7 +362,7 @@ async fn main() -> Result<(), reqwest::Error> {
                 AppEvent::SubscriptionEvent(event) => {
                     if let Resource::Listening = app.active_resource {
                         app.contents
-                            .push(serde_json::to_string_pretty(&event.content).unwrap());
+                            .push(serde_json::to_string_pretty(&event.content)?);
                         if app.content_cursor.is_none() {
                             app.content_cursor = Some(0)
                         }
@@ -441,14 +464,10 @@ async fn main() -> Result<(), reqwest::Error> {
         }
     }
 
-    disable_raw_mode().unwrap();
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).unwrap();
-    terminal.show_cursor().unwrap();
-
-    Ok(())
+    Ok({})
 }
 
-fn draw(frame: &mut Frame, app: &App) {
+fn draw(frame: &mut Frame, app: &App) -> anyhow::Result<()> {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(7), Constraint::Percentage(100)])
@@ -527,6 +546,9 @@ fn draw(frame: &mut Frame, app: &App) {
             let selected = app
                 .content_cursor
                 .and_then(|cursor| app.contents.get(cursor))
+                //TODO: probably nothing that can fail should be done in the draw function, as we
+                //can't propagate errors up. So consider making the serialization during update
+                //function.
                 .map(|content| serde_json::from_str::<serde_json::Value>(content).unwrap())
                 .map(|content| serde_json::to_string_pretty(&content).unwrap());
 
@@ -538,7 +560,7 @@ fn draw(frame: &mut Frame, app: &App) {
                 .title_style(Style::default().fg(Color::Green))
                 .padding(Padding::new(2, 2, 1, 1));
 
-            let json_preview = Paragraph::new(selected.unwrap_or(String::from("nothing to show")))
+            let _json_preview = Paragraph::new(selected.unwrap_or(String::from("nothing to show")))
                 .block(json_block)
                 .wrap(Wrap { trim: false });
 
@@ -547,6 +569,8 @@ fn draw(frame: &mut Frame, app: &App) {
         }
         _ => frame.render_stateful_widget(content_list, main_chunks[0], &mut state),
     };
+
+    Ok({})
 }
 
 #[derive(Clone)]

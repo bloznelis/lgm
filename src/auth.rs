@@ -24,7 +24,7 @@ pub struct Token {
     pub access_token: String,
 }
 
-pub async fn auth(cfg: AuthConfig) -> Result<Token, reqwest::Error> {
+pub async fn auth(cfg: AuthConfig) -> anyhow::Result<Token> {
     let client = reqwest::Client::new();
     let auth_data = AuthData {
         grant_type: "client_credentials".to_string(),
@@ -32,14 +32,14 @@ pub async fn auth(cfg: AuthConfig) -> Result<Token, reqwest::Error> {
         client_secret: cfg.client_secret,
         audience: cfg.audience
     };
-    let auth_data = serde_urlencoded::to_string(&auth_data).expect("serialization issue");
+    let auth_data = serde_urlencoded::to_string(&auth_data)?;
 
     let mut headers = HeaderMap::new();
     headers.insert(
         CONTENT_TYPE,
-        "application/x-www-form-urlencoded".parse().unwrap(),
+        "application/x-www-form-urlencoded".parse()?,
     );
-    headers.insert(ACCEPT, "application/json".parse().unwrap());
+    headers.insert(ACCEPT, "application/json".parse()?);
 
     let response = client
         .post(cfg.token_url)
