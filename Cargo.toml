@@ -3,8 +3,6 @@ name = "lgm"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 futures = "0.3"
 pulsar = "5.1"
@@ -19,3 +17,4 @@ crossterm = "0.27"
 serde_urlencoded = "0.7.1"
 anyhow = "1.0.79"
 toml = "0.8.10"
+pulsar-admin-sdk = "2.1.0"

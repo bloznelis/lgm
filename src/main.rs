@@ -7,6 +7,10 @@ use futures::TryStreamExt;
 use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
 use pulsar::consumer::InitialPosition;
 use pulsar::{Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor};
+use pulsar_admin_sdk::apis::configuration::Configuration;
+use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_tenant_namespaces;
+use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_topics;
+use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_get_subscriptions;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::Wrap;
@@ -70,11 +74,49 @@ impl ErrorToShow {
     }
 }
 
+#[derive(Clone)]
+enum Content {
+    Tenant { name: String },
+    Topic { name: String, fqn: String },
+    Namespace { name: String },
+    Subscription { name: String },
+    SubMessage { value: String },
+}
+
+fn get_topic_fqn(content: &Content) -> Option<String> {
+    match content {
+        Content::Tenant { .. } => None,
+        Content::Topic { name: _, fqn } => Some(fqn.to_string()),
+        Content::Namespace { name: _ } => None,
+        Content::Subscription { .. } => None,
+        Content::SubMessage { .. } => None,
+    }
+}
+fn get_name(content: Content) -> Option<String> {
+    match content {
+        Content::Tenant { name } => Some(name),
+        Content::Topic { name, .. } => Some(name),
+        Content::Namespace { name } => Some(name),
+        Content::Subscription { name } => Some(name),
+        Content::SubMessage { .. } => None,
+    }
+}
+
+fn get_show(content: Content) -> Option<String> {
+    match content {
+        Content::Tenant { name } => Some(name),
+        Content::Topic { name, .. } => Some(name),
+        Content::Namespace { name } => Some(name),
+        Content::Subscription { name } => Some(name),
+        Content::SubMessage { value } => Some(value),
+    }
+}
+
 struct App {
     error_to_show: Option<ErrorToShow>,
     active_element: Element,
     active_resource: Resource,
-    contents: Vec<String>,
+    contents: Vec<Content>,
     content_cursor: Option<usize>,
     last_cursor: Option<usize>,
     input: String,
@@ -82,6 +124,7 @@ struct App {
     last_namespace: Option<String>,
     last_topic: Option<String>,
     active_sub_handle: Option<tokio::sync::oneshot::Sender<()>>,
+    pulsar_admin_cfg: Configuration,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -96,10 +139,6 @@ impl DeserializeMessage for TopicEvent {
     fn deserialize_message(payload: &Payload) -> Self::Output {
         serde_json::from_slice::<Value>(&payload.data).map(|content| TopicEvent { content })
     }
-}
-
-struct Topic {
-    value: String,
 }
 
 enum ControlEvent {
@@ -119,7 +158,7 @@ enum AppEvent {
 }
 
 async fn listen_to_topic(
-    topic: Topic,
+    topic_fqn: String,
     event_sender: Sender<AppEvent>,
     pulsar: Arc<Mutex<Pulsar<TokioExecutor>>>,
     mut control_channel: tokio::sync::oneshot::Receiver<()>,
@@ -133,7 +172,7 @@ async fn listen_to_topic(
                 .durable(false)
                 .with_initial_position(InitialPosition::Latest),
         )
-        .with_topic(topic.value)
+        .with_topic(topic_fqn)
         .with_consumer_name("lgm")
         .with_subscription_type(SubType::Exclusive)
         .with_subscription("lgm_subscription")
@@ -221,13 +260,13 @@ async fn run() -> anyhow::Result<()> {
 
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
-    update(&mut terminal).await?;
+    let result = update(&mut terminal).await;
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
-    Ok({})
+    result
 }
 
 async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Result<()> {
@@ -250,15 +289,23 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
     let pulsar = builder.build().await?;
     let pulsar = Arc::new(Mutex::new(pulsar));
 
+    let conf = Configuration {
+        base_path: "https://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud/admin/v2".to_string(),
+        bearer_access_token: Some(token.access_token.clone()),
+        ..Configuration::default()
+    };
+
     let (sender, receiver): (Sender<AppEvent>, Receiver<AppEvent>) = channel();
     let control_sender = sender.clone();
-    let _handle = thread::spawn(move || listen_for_control(control_sender)); //can we use tokio thread here?
+    //can we use tokio thread here?
+    let _handle = thread::spawn(move || listen_for_control(control_sender));
+    let namespaces: Vec<Content> = fetch_namespaces("flowie", &conf).await?;
 
     let mut app = App {
         error_to_show: None,
         active_element: Element::ContentView,
         active_resource: Resource::Namespaces,
-        contents: fetch_namespaces(&"flowie".to_string(), &token).await?,
+        contents: namespaces,
         content_cursor: Some(0),
         last_cursor: None,
         input: String::from(""),
@@ -266,6 +313,7 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
         last_namespace: None,
         last_topic: None,
         active_sub_handle: None,
+        pulsar_admin_cfg: conf,
     };
 
     loop {
@@ -276,9 +324,7 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                 AppEvent::Control(ControlEvent::Subscribe) => {
                     if let Resource::Topics = app.active_resource {
                         if let Some(cursor) = app.content_cursor {
-                            let topic = Topic {
-                                value: app.contents[cursor].clone(),
-                            };
+                            let topic = app.contents[cursor].clone();
                             app.active_resource = Resource::Listening;
                             app.contents = Vec::new();
                             let new_pulsar = pulsar.clone();
@@ -286,7 +332,13 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                             let (tx, rx) = oneshot::channel::<()>();
                             app.active_sub_handle = Some(tx);
                             let _sub_handle = tokio::task::spawn(async move {
-                                listen_to_topic(topic, new_sender, new_pulsar, rx).await
+                                listen_to_topic(
+                                    get_topic_fqn(&topic).unwrap(),
+                                    new_sender,
+                                    new_pulsar,
+                                    rx,
+                                )
+                                .await
                             });
                         }
                     }
@@ -330,14 +382,17 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                                 app.active_resource = Resource::Tenants;
                             }
                             Err(err) => {
-                                app.error_to_show =
-                                    Some(ErrorToShow::new(format!("Failed to fetch tenants :[\n {:?}", err)));
+                                app.error_to_show = Some(ErrorToShow::new(format!(
+                                    "Failed to fetch tenants :[\n {:?}",
+                                    err
+                                )));
                             }
                         }
                     }
                     Resource::Topics => {
                         if let Some(last_tenant) = &app.last_tenant {
-                            let namespaces = fetch_namespaces(last_tenant, &token).await?;
+                            let namespaces =
+                                fetch_namespaces(last_tenant, &app.pulsar_admin_cfg).await?;
                             if !namespaces.is_empty() {
                                 app.content_cursor = app.last_cursor.or(Some(0))
                             } else {
@@ -349,7 +404,8 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                     }
                     Resource::Subscriptions => {
                         if let Some(last_namespace) = &app.last_namespace {
-                            let topics = fetch_topics(last_namespace, &token).await?;
+                            let topics =
+                                fetch_topics(last_namespace, &app.pulsar_admin_cfg).await?;
                             if !topics.is_empty() {
                                 app.content_cursor = app.last_cursor.or(Some(0))
                             } else {
@@ -362,7 +418,8 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                     }
                     Resource::Listening => {
                         if let Some(last_namespace) = &app.last_namespace {
-                            let topics = fetch_topics(last_namespace, &token).await?;
+                            let topics =
+                                fetch_topics(last_namespace, &app.pulsar_admin_cfg).await?;
                             if !topics.is_empty() {
                                 app.content_cursor = app.last_cursor.or(Some(0))
                             } else {
@@ -382,8 +439,9 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                 },
                 AppEvent::SubscriptionEvent(event) => {
                     if let Resource::Listening = app.active_resource {
-                        app.contents
-                            .push(serde_json::to_string_pretty(&event.content)?);
+                        app.contents.push(Content::SubMessage {
+                            value: serde_json::to_string_pretty(&event.content)?,
+                        });
                         if app.content_cursor.is_none() {
                             app.content_cursor = Some(0)
                         }
@@ -408,8 +466,9 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                         Resource::Tenants => {
                             if let Some(cursor) = app.content_cursor {
                                 if !app.contents.is_empty() {
-                                    let tenant = app.contents[cursor].clone();
-                                    let namespaces = fetch_namespaces(&tenant, &token).await?;
+                                    let tenant = get_name(app.contents[cursor].clone()).unwrap();
+                                    let namespaces =
+                                        fetch_namespaces(&tenant, &app.pulsar_admin_cfg).await?;
                                     app.last_cursor = app.content_cursor;
                                     if !namespaces.is_empty() {
                                         app.content_cursor = Some(0);
@@ -424,8 +483,9 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                         }
                         Resource::Namespaces => {
                             if let Some(cursor) = app.content_cursor {
-                                let namespace = app.contents[cursor].clone();
-                                let topics = fetch_topics(&namespace, &token).await?;
+                                let namespace = get_name(app.contents[cursor].clone()).unwrap();
+                                let topics =
+                                    fetch_topics(&namespace, &app.pulsar_admin_cfg).await?;
                                 app.last_cursor = app.content_cursor;
                                 if !topics.is_empty() {
                                     app.content_cursor = Some(0);
@@ -441,8 +501,13 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                         Resource::Topics => {
                             if let Some(cursor) = app.content_cursor {
                                 if !app.contents.is_empty() {
-                                    let topic = app.contents[cursor].clone();
-                                    let subscriptions = fetch_subscriptions(&topic, &token).await?;
+                                    let topic = get_name(app.contents[cursor].clone()).unwrap();
+                                    let subscriptions = fetch_subscriptions(
+                                        app.last_namespace.as_ref().unwrap(),
+                                        &topic,
+                                        &app.pulsar_admin_cfg,
+                                    )
+                                    .await?;
                                     app.last_cursor = app.content_cursor;
                                     if !subscriptions.is_empty() {
                                         app.content_cursor = Some(0);
@@ -467,8 +532,9 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                         }
                         "namespaces" => {
                             if let Some(cursor) = app.content_cursor {
-                                let tenant = app.contents[cursor].clone();
-                                let topics = fetch_namespaces(&tenant, &token).await?;
+                                let tenant = get_name(app.contents[cursor].clone()).unwrap();
+                                let topics =
+                                    fetch_namespaces(&tenant, &app.pulsar_admin_cfg).await?;
                                 app.content_cursor = None;
                                 app.contents = topics;
                                 app.active_resource = Resource::Namespaces;
@@ -592,9 +658,13 @@ fn draw(frame: &mut Frame, app: &App) -> anyhow::Result<()> {
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
-    let content_list = List::new(app.contents.clone())
-        .block(content_block)
-        .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
+    let content_list = List::new(
+        app.contents
+            .iter()
+            .flat_map(|content| get_show(content.clone())),
+    )
+    .block(content_block)
+    .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
     let mut state = ListState::default().with_selected(app.content_cursor);
 
@@ -643,7 +713,8 @@ fn draw(frame: &mut Frame, app: &App) -> anyhow::Result<()> {
                 //TODO: probably nothing that can fail should be done in the draw function, as we
                 //can't propagate errors up. So consider making the serialization during update
                 //function.
-                .map(|content| serde_json::from_str::<serde_json::Value>(content).unwrap())
+                .and_then(|content| get_show(content.clone()))
+                .map(|content| serde_json::from_str::<serde_json::Value>(&content).unwrap())
                 .map(|content| serde_json::to_string_pretty(&content).unwrap());
 
             let json_block = Block::default()
@@ -711,35 +782,70 @@ async fn fetch_anything(url: String, token: &Token) -> Result<Vec<String>, reqwe
     Ok(array)
 }
 
-async fn fetch_tenants(token: &Token) -> Result<Vec<String>, reqwest::Error> {
+async fn fetch_tenants(token: &Token) -> Result<Vec<Content>, reqwest::Error> {
     let addr = "https://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud";
+    let tenant = fetch_anything(format!("{}/admin/v2/tenants", addr), token).await?;
+    let content = tenant
+        .iter()
+        .map(|tenant| Content::Tenant {
+            name: tenant.to_string(),
+        })
+        .collect();
 
-    fetch_anything(format!("{}/admin/v2/tenants", addr), token).await
+    Ok(content)
 }
 
-async fn fetch_namespaces(tenant: &String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
-    let addr = "https://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud";
+async fn fetch_namespaces(tenant: &str, cfg: &Configuration) -> anyhow::Result<Vec<Content>> {
+    let result = namespaces_get_tenant_namespaces(&cfg, tenant)
+        .await
+        .map_err(|err| anyhow!("Failed to fetch namespaces {}", err))?;
 
-    fetch_anything(format!("{}/admin/v2/namespaces/{}", addr, tenant), token).await
+    let perfix_dropped = result
+        .iter()
+        .map(|namespace| Content::Namespace {
+            name: namespace
+                .strip_prefix("flowie/")
+                .map(|stripped| stripped.to_string())
+                .unwrap_or(namespace.clone()),
+        })
+        .collect();
+
+    Ok(perfix_dropped)
 }
 
-async fn fetch_topics(namespace: &String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
-    let addr = "https://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud";
+async fn fetch_topics(namespace: &str, cfg: &Configuration) -> anyhow::Result<Vec<Content>> {
+    let result = namespaces_get_topics(&cfg, "flowie", namespace, None, None)
+        .await
+        .map_err(|err| anyhow!("Failed to fetch topics {}", err))?;
 
-    fetch_anything(
-        format!("{}/admin/v2/namespaces/{}/topics", addr, namespace),
-        token,
-    )
-    .await
+    let perfix_dropped = result
+        .iter()
+        .map(|topic| Content::Topic {
+            name: topic
+                .split('/')
+                .last()
+                .map(|stripped| stripped.to_string())
+                .unwrap_or(topic.clone()),
+            fqn: topic.to_string(),
+        })
+        .collect();
+
+    Ok(perfix_dropped)
 }
 
-async fn fetch_subscriptions(topic: &String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
-    let addr = "https://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud";
-    let topic = topic.strip_prefix("persistent://").unwrap_or(topic);
+async fn fetch_subscriptions(
+    namespace: &str,
+    topic: &str,
+    cfg: &Configuration,
+) -> anyhow::Result<Vec<Content>> {
+    let result = persistent_topics_get_subscriptions(&cfg, "flowie", namespace, topic, None)
+        .await
+        .map_err(|err| anyhow!("Failed to fetch subscriptions {}", err))?
+        .iter()
+        .map(|sub| Content::Subscription {
+            name: sub.to_string(),
+        })
+        .collect();
 
-    fetch_anything(
-        format!("{}/admin/v2/persistent/{}/subscriptions", addr, topic),
-        token,
-    )
-    .await
+    Ok(result)
 }
