@@ -1,21 +1,20 @@
 pub mod auth;
 pub mod draw;
 mod pulsar_admin;
+mod pulsar_listener;
 
 use anyhow::{anyhow, Result};
 use auth::{auth, read_config};
 use clipboard::{ClipboardContext, ClipboardProvider};
+use pulsar_listener::TopicEvent;
 use core::fmt;
-use futures::TryStreamExt;
 use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
-use pulsar::consumer::InitialPosition;
-use pulsar::{Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor};
+use pulsar::{DeserializeMessage, Payload, Pulsar, TokioExecutor};
 use pulsar_admin::{fetch_namespaces, fetch_subscriptions, fetch_tenants, fetch_topics};
 use pulsar_admin_sdk::apis::configuration::Configuration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::Stdout;
-use std::panic;
 use std::{
     io,
     sync::{
@@ -136,29 +135,6 @@ pub struct App {
     selected_side: Side,
 }
 
-#[derive(Serialize, Deserialize)]
-struct TopicEvent {
-    body: Value,
-    properties: Vec<String>,
-}
-
-impl DeserializeMessage for TopicEvent {
-    type Output = Result<TopicEvent, serde_json::Error>;
-
-    fn deserialize_message(payload: &Payload) -> Self::Output {
-        let props = payload
-            .metadata
-            .properties
-            .iter()
-            .map(|keyvalue| format!("{}:{}", keyvalue.key, keyvalue.value))
-            .collect::<Vec<String>>();
-        serde_json::from_slice::<Value>(&payload.data).map(|content| TopicEvent {
-            body: content,
-            properties: props,
-        })
-    }
-}
-
 enum ControlEvent {
     Enter,
     CycleSide,
@@ -173,58 +149,6 @@ enum ControlEvent {
 enum AppEvent {
     Control(ControlEvent),
     SubscriptionEvent(TopicEvent),
-}
-
-async fn listen_to_topic(
-    topic_fqn: String,
-    event_sender: Sender<AppEvent>,
-    pulsar: Arc<Mutex<Pulsar<TokioExecutor>>>,
-    mut control_channel: tokio::sync::oneshot::Receiver<()>,
-) -> anyhow::Result<()> {
-    let mut consumer: Consumer<TopicEvent, TokioExecutor> = pulsar
-        .lock()
-        .await
-        .consumer()
-        .with_options(
-            pulsar::ConsumerOptions::default()
-                .durable(false)
-                .with_initial_position(InitialPosition::Latest),
-        )
-        .with_topic(topic_fqn)
-        .with_consumer_name("lgm")
-        .with_subscription_type(SubType::Exclusive)
-        .with_subscription("lgm_subscription")
-        .build()
-        .await?;
-
-    loop {
-        tokio::select! {
-            msg = consumer.try_next() => {
-                match msg {
-                    Ok(Some(message)) => {
-                        let topic_event = message.deserialize()?;
-                        let _ = event_sender.send(AppEvent::SubscriptionEvent(topic_event));
-
-                        consumer.ack(&message).await?;
-
-                    },
-                    Ok(None) => break,
-                    Err(e) => {
-                        println!("Error in topic consumer, {:?}", e);
-                        break;
-                    }
-                }
-            },
-            _ = &mut control_channel => {
-                // cancel!
-                break;
-            }
-        }
-    }
-
-    consumer.close().await?;
-
-    Ok({})
 }
 
 fn listen_for_control(sender: Sender<AppEvent>) {
@@ -383,7 +307,7 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
                             let (tx, rx) = oneshot::channel::<()>();
                             app.active_sub_handle = Some(tx);
                             let _sub_handle = tokio::task::spawn(async move {
-                                listen_to_topic(
+                                pulsar_listener::listen_to_topic(
                                     get_topic_fqn(&topic).unwrap(),
                                     new_sender,
                                     new_pulsar,
