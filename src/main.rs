@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::Stdout;
 use std::panic;
-use std::rc::Rc;
 use std::{
     io,
     sync::{
@@ -114,7 +113,7 @@ fn get_show(content: Content) -> Option<String> {
         Content::Topic { name, .. } => Some(name),
         Content::Namespace { name } => Some(name),
         Content::Subscription { name } => Some(name),
-        Content::SubMessage { body, properties } => Some(body),
+        Content::SubMessage { body, .. } => Some(body),
     }
 }
 
@@ -124,7 +123,10 @@ fn get_show_alternative(content: Content) -> Option<String> {
         Content::Topic { name, .. } => Some(name),
         Content::Namespace { name } => Some(name),
         Content::Subscription { name } => Some(name),
-        Content::SubMessage { body, properties } => Some(properties.join("\n")),
+        Content::SubMessage {
+            body: _,
+            properties,
+        } => Some(properties.join("\n")),
     }
 }
 
@@ -134,7 +136,6 @@ struct App {
     contents: Vec<Content>,
     content_cursor: Option<usize>,
     last_cursor: Option<usize>,
-    input: String,
     last_tenant: Option<String>,
     last_namespace: Option<String>,
     last_topic: Option<String>,
@@ -299,20 +300,16 @@ enum Side {
 }
 
 async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Result<()> {
-    let app_config = read_config("config/local.toml")?;
+    let app_config = read_config("config/staging.toml")?;
 
     let url = &app_config.pulsar_url.clone();
 
-    //TODO: unify pulsar and pulsar admin client auth configuration
-    //Get the sensitive info from developers key
     let builder = match &app_config.auth {
-        auth::Auth::Token { token } => Pulsar::builder(url, TokioExecutor), //TODO: Add token as auth here
+        //TODO: Add token as auth here
+        auth::Auth::Token { token: _ } => Pulsar::builder(url, TokioExecutor),
         auth::Auth::OAuth {
-            client_id,
-            client_secret,
             issuer_url,
             audience,
-            token_url,
             credentials_file_url,
         } => Pulsar::builder(url, TokioExecutor).with_auth_provider(
             OAuth2Authentication::client_credentials(OAuth2Params {
@@ -349,7 +346,6 @@ async fn update(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> anyhow::Re
         contents: namespaces,
         content_cursor: Some(0),
         last_cursor: None,
-        input: String::from(""),
         last_tenant: Some(default_tenant),
         last_namespace: None,
         last_topic: None,

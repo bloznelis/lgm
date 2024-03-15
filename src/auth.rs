@@ -1,5 +1,5 @@
 use anyhow::Result;
-use reqwest::header::{HeaderMap, ACCEPT, CONTENT_TYPE};
+use reqwest::{header::{HeaderMap, ACCEPT, CONTENT_TYPE}, Url};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -18,13 +18,16 @@ pub enum Auth {
         token: String,
     },
     OAuth {
-        client_id: String,
-        client_secret: String,
         issuer_url: String,
         audience: String,
-        token_url: String,
         credentials_file_url: String,
     },
+}
+
+#[derive(Deserialize, Debug)]
+struct OAuth2PrivateParams {
+    client_id: String,
+    client_secret: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -46,18 +49,20 @@ pub async fn auth(cfg: Config) -> anyhow::Result<Token> {
             access_token: token,
         },
         Auth::OAuth {
-            client_id,
-            client_secret,
             issuer_url,
             audience,
-            token_url,
             credentials_file_url,
         } => {
             let client = reqwest::Client::new();
+
+            let credentials_url = Url::parse(credentials_file_url.as_str())?;
+            let creds: OAuth2PrivateParams =
+                serde_json::from_str(fs::read_to_string(credentials_url.path())?.as_str())?;
+
             let auth_data = AuthData {
                 grant_type: "client_credentials".to_string(),
-                client_id,
-                client_secret,
+                client_id: creds.client_id,
+                client_secret: creds.client_secret,
                 audience,
             };
             let auth_data = serde_urlencoded::to_string(&auth_data)?;
@@ -66,6 +71,8 @@ pub async fn auth(cfg: Config) -> anyhow::Result<Token> {
             headers.insert(CONTENT_TYPE, "application/x-www-form-urlencoded".parse()?);
             headers.insert(ACCEPT, "application/json".parse()?);
 
+            let token_url = format!("{}/oauth/token", issuer_url);
+
             let response = client
                 .post(token_url)
                 .headers(headers)
@@ -73,8 +80,7 @@ pub async fn auth(cfg: Config) -> anyhow::Result<Token> {
                 .send()
                 .await?;
 
-            let token: Token = response.json().await?;
-            token
+            response.json().await?
         }
     };
 
