@@ -9,7 +9,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::{App, Resource, Side, get_show, get_show_alternative};
+use crate::update::{get_show, get_show_alternative};
+use crate::{App, Resource, Side, update};
 
 struct HeaderLayout {
     help: Rect,
@@ -140,7 +141,7 @@ pub fn draw(frame: &mut Frame, app: &App) -> anyhow::Result<()> {
     let content_list = List::new(
         app.contents
             .iter()
-            .flat_map(|content| crate::get_show(content.clone()))
+            .flat_map(|content| get_show(content.clone()))
             .map(|content| {
                 if content.len() > 300 {
                     format!("{}...", &content[..300])
