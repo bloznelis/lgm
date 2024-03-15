@@ -1,11 +1,13 @@
+use crate::auth::Token;
+use crate::Content;
 use anyhow::{anyhow, Result};
+use chrono::TimeDelta;
+use chrono::Utc;
 use pulsar_admin_sdk::apis::configuration::Configuration;
 use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_tenant_namespaces;
 use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_topics;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_get_subscriptions;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_reset_cursor;
-use crate::Content;
-use crate::auth::Token;
 
 pub async fn fetch_anything(url: String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
     let client = reqwest::Client::new();
@@ -33,8 +35,21 @@ pub async fn fetch_tenants(token: &Token) -> Result<Vec<Content>, reqwest::Error
     Ok(content)
 }
 
-pub async fn reset_subscription(tenant: &str, cfg: &Configuration) -> anyhow::Result<Vec<Content>> {
-    todo!();
+pub async fn reset_subscription(
+    tenant: &str,
+    namespace: &str,
+    topic: &str,
+    sub_name: &str,
+    cfg: &Configuration,
+    time_delta: TimeDelta,
+) -> anyhow::Result<()> {
+    let now = Utc::now();
+    let one_hour_before = now - time_delta;
+    let timestamp = one_hour_before.timestamp_millis();
+
+    persistent_topics_reset_cursor(cfg, tenant, namespace, topic, sub_name, timestamp, None)
+        .await
+        .map_err(|err| anyhow!("Failed to seek back subscription {}", err))
 }
 
 pub async fn fetch_namespaces(tenant: &str, cfg: &Configuration) -> anyhow::Result<Vec<Content>> {
@@ -56,7 +71,11 @@ pub async fn fetch_namespaces(tenant: &str, cfg: &Configuration) -> anyhow::Resu
     Ok(perfix_dropped)
 }
 
-pub async fn fetch_topics(tenant: &str, namespace: &str, cfg: &Configuration) -> anyhow::Result<Vec<Content>> {
+pub async fn fetch_topics(
+    tenant: &str,
+    namespace: &str,
+    cfg: &Configuration,
+) -> anyhow::Result<Vec<Content>> {
     let result = namespaces_get_topics(&cfg, tenant, namespace, None, None)
         .await
         .map_err(|err| anyhow!("Failed to fetch topics {}", err))?;
@@ -84,7 +103,15 @@ pub async fn fetch_subscriptions(
 ) -> anyhow::Result<Vec<Content>> {
     let result = persistent_topics_get_subscriptions(&cfg, tenant, namespace, topic, None)
         .await
-        .map_err(|err| anyhow!("Failed to fetch subscriptions {} {} {} {}", tenant, namespace, topic, err))?
+        .map_err(|err| {
+            anyhow!(
+                "Failed to fetch subscriptions {} {} {} {}",
+                tenant,
+                namespace,
+                topic,
+                err
+            )
+        })?
         .iter()
         .map(|sub| Content::Subscription {
             name: sub.to_string(),

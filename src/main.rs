@@ -33,7 +33,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 #[tokio::main]
 async fn main() -> () {
-    env_logger::init();
+    // env_logger::init();
 
     match run().await {
         Ok(_) => println!("bye!"),
@@ -127,6 +127,13 @@ pub enum ControlEvent {
     Down,
     Terminate,
     Subscribe,
+    ResetSubscription(ResetLength),
+}
+
+pub enum ResetLength {
+    OneHour,
+    TwentyFourHours,
+    Week
 }
 
 pub enum AppEvent {
@@ -145,6 +152,15 @@ fn listen_for_control(sender: Sender<AppEvent>) {
                 }
                 KeyCode::Char('s') if key.modifiers == KeyModifiers::CONTROL => {
                     Some(AppEvent::Control(ControlEvent::Subscribe))
+                },
+                KeyCode::Char('u') => {
+                    Some(AppEvent::Control(ControlEvent::ResetSubscription(ResetLength::OneHour)))
+                }
+                KeyCode::Char('i') => {
+                    Some(AppEvent::Control(ControlEvent::ResetSubscription(ResetLength::TwentyFourHours)))
+                }
+                KeyCode::Char('o') => {
+                    Some(AppEvent::Control(ControlEvent::ResetSubscription(ResetLength::Week)))
                 }
                 KeyCode::Tab => Some(AppEvent::Control(ControlEvent::CycleSide)),
                 KeyCode::Enter => Some(AppEvent::Control(ControlEvent::Enter)),

@@ -1,6 +1,7 @@
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::Wrap;
+use ratatui::widgets::{Wrap, ListDirection};
+use itertools::Itertools;
 
 use ratatui::{
     prelude::{Alignment, Constraint, Direction, Layout},
@@ -10,7 +11,7 @@ use ratatui::{
 };
 
 use crate::update::{get_show, get_show_alternative};
-use crate::{App, Resource, Side, update};
+use crate::{App, Resource, Side};
 
 struct HeaderLayout {
     help: Rect,
@@ -162,6 +163,9 @@ pub fn draw(frame: &mut Frame, app: &App) -> anyhow::Result<()> {
     let help_item_bac = HelpItem::new("<esc>", "back");
     let help_item_listen = HelpItem::new("<c-s>", "listen");
     let help_item_yank = HelpItem::new("y", "copy to clipboard");
+    let help_item_seek_hour = HelpItem::new("u", "reseek sub 1h");
+    let help_item_seek_day = HelpItem::new("i", "reseek sub 24h");
+    let help_item_seek_week = HelpItem::new("o", "reseek sub 1 week");
     let help_cycle_side = HelpItem::new("<tab>", "cycle selected side");
 
     let help: Vec<HelpItem> = match &app.active_resource {
@@ -173,8 +177,10 @@ pub fn draw(frame: &mut Frame, app: &App) -> anyhow::Result<()> {
             HelpItem::new("<enter>", "subscriptions"),
         ],
         Resource::Subscriptions => vec![help_item_bac],
-        Resource::Listening => vec![help_item_bac, help_cycle_side, help_item_yank],
+        Resource::Listening => vec![help_item_bac, help_cycle_side, help_item_yank, help_item_seek_hour, help_item_seek_day, help_item_seek_week],
     };
+    // TODO: Help items do not fit vertically, probably they could be split into multiple lists.
+    // let split: Vec<Vec<HelpItem>> = help.iter().chunks(5);
     let help_list = List::new(help).block(help_block);
 
     frame.render_widget(help_list, layout_chunks.header.help);

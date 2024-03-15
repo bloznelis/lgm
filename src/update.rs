@@ -1,5 +1,6 @@
-use anyhow::anyhow;
 use crate::pulsar_admin;
+use anyhow::anyhow;
+use chrono::TimeDelta;
 use clipboard::{ClipboardContext, ClipboardProvider};
 use core::fmt;
 use pulsar::{Pulsar, TokioExecutor};
@@ -143,6 +144,30 @@ pub async fn update(
         if let Ok(event) = app.pulsar.receiver.recv_timeout(Duration::from_millis(100)) {
             app.error_to_show = None;
             match event {
+                AppEvent::Control(ControlEvent::ResetSubscription(length)) => {
+                    if let Resource::Listening = app.active_resource {
+                        let length = match length {
+                            crate::ResetLength::OneHour => TimeDelta::try_hours(1).expect("Expecting hours"),
+                            crate::ResetLength::TwentyFourHours => TimeDelta::try_hours(24).expect("Expecting hours"),
+                            crate::ResetLength::Week => TimeDelta::try_days(7).expect("Expecting days"),
+                        };
+
+                        let result = pulsar_admin::reset_subscription(
+                            &app.last_tenant.as_ref().expect("Tenant must be set"),
+                            &app.last_namespace.as_ref().expect("Namespace must be set"),
+                            &app.last_topic.as_ref().expect("Topic must be set"),
+                            "lgm_subscription",
+                            &app.pulsar_admin_cfg,
+                            length
+                        )
+                        .await;
+
+                        match result {
+                            Err(err) => app.error_to_show = Some(ErrorToShow::new(err.to_string())),
+                            Ok(_) => (),
+                        }
+                    }
+                }
                 AppEvent::Control(ControlEvent::CycleSide) => {
                     if let Resource::Listening = app.active_resource {
                         match app.selected_side {
@@ -167,6 +192,7 @@ pub async fn update(
                     if let Resource::Topics = app.active_resource {
                         if let Some(cursor) = app.content_cursor {
                             let topic = app.contents[cursor].clone();
+                            app.last_topic = get_name(topic.clone());
                             app.active_resource = Resource::Listening;
                             app.content_cursor = None;
                             app.contents = Vec::new();
@@ -251,8 +277,11 @@ pub async fn update(
                         }
                         Resource::Topics => {
                             if let Some(last_tenant) = &app.last_tenant {
-                                let namespaces =
-                                    pulsar_admin::fetch_namespaces(last_tenant, &app.pulsar_admin_cfg).await;
+                                let namespaces = pulsar_admin::fetch_namespaces(
+                                    last_tenant,
+                                    &app.pulsar_admin_cfg,
+                                )
+                                .await;
 
                                 match namespaces {
                                     Ok(namespaces) => {
@@ -354,7 +383,8 @@ pub async fn update(
                             if !app.contents.is_empty() {
                                 let tenant = get_name(app.contents[cursor].clone()).unwrap();
                                 let namespaces =
-                                    pulsar_admin::fetch_namespaces(&tenant, &app.pulsar_admin_cfg).await;
+                                    pulsar_admin::fetch_namespaces(&tenant, &app.pulsar_admin_cfg)
+                                        .await;
 
                                 match namespaces {
                                     Ok(namespaces) => {
