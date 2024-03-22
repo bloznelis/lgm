@@ -1,5 +1,8 @@
 use crate::auth::Token;
-use crate::Content;
+use crate::update::Namespace;
+use crate::update::Subscription;
+use crate::update::Tenant;
+use crate::update::Topic;
 use anyhow::{anyhow, Result};
 use chrono::TimeDelta;
 use chrono::Utc;
@@ -22,14 +25,12 @@ pub async fn fetch_anything(url: String, token: &Token) -> Result<Vec<String>, r
     Ok(array)
 }
 
-pub async fn fetch_tenants(token: &Token) -> Result<Vec<Content>, reqwest::Error> {
+pub async fn fetch_tenants(token: &Token) -> Result<Vec<Tenant>, reqwest::Error> {
     let addr = "https://pc-2c213b69.euw1-turtle.streamnative.g.snio.cloud";
     let tenant = fetch_anything(format!("{}/admin/v2/tenants", addr), token).await?;
     let content = tenant
         .iter()
-        .map(|tenant| Content::Tenant {
-            name: tenant.to_string(),
-        })
+        .map(|tenant| Tenant { name: tenant.to_string() })
         .collect();
 
     Ok(content)
@@ -52,14 +53,14 @@ pub async fn reset_subscription(
         .map_err(|err| anyhow!("Failed to seek back subscription {}", err))
 }
 
-pub async fn fetch_namespaces(tenant: &str, cfg: &Configuration) -> anyhow::Result<Vec<Content>> {
+pub async fn fetch_namespaces(tenant: &str, cfg: &Configuration) -> anyhow::Result<Vec<Namespace>> {
     let result = namespaces_get_tenant_namespaces(&cfg, tenant)
         .await
         .map_err(|err| anyhow!("Failed to fetch namespaces {}", err))?;
 
     let perfix_dropped = result
         .iter()
-        .map(|namespace| Content::Namespace {
+        .map(|namespace| Namespace {
             name: namespace
                 .strip_prefix(format!("{}/", tenant.to_string()).as_str())
                 // .strip_prefix("flowie/")
@@ -75,14 +76,14 @@ pub async fn fetch_topics(
     tenant: &str,
     namespace: &str,
     cfg: &Configuration,
-) -> anyhow::Result<Vec<Content>> {
+) -> anyhow::Result<Vec<Topic>> {
     let result = namespaces_get_topics(&cfg, tenant, namespace, None, None)
         .await
         .map_err(|err| anyhow!("Failed to fetch topics {}", err))?;
 
     let perfix_dropped = result
         .iter()
-        .map(|topic| Content::Topic {
+        .map(|topic| Topic {
             name: topic
                 .split('/')
                 .last()
@@ -100,7 +101,7 @@ pub async fn fetch_subscriptions(
     namespace: &str,
     topic: &str,
     cfg: &Configuration,
-) -> anyhow::Result<Vec<Content>> {
+) -> anyhow::Result<Vec<Subscription>> {
     let result = persistent_topics_get_subscriptions(&cfg, tenant, namespace, topic, None)
         .await
         .map_err(|err| {
@@ -113,9 +114,7 @@ pub async fn fetch_subscriptions(
             )
         })?
         .iter()
-        .map(|sub| Content::Subscription {
-            name: sub.to_string(),
-        })
+        .map(|sub| Subscription { name: sub.to_string() })
         .collect();
 
     Ok(result)

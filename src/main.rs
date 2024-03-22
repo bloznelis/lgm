@@ -7,7 +7,7 @@ pub mod update;
 use crate::update::update;
 
 use auth::{auth, read_config};
-use update::{Content, App, PulsarApp, Resource, Side};
+use update::{App, PulsarApp, Resource, Side, Namespace};
 use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
 use pulsar::{Pulsar, TokioExecutor};
 use pulsar_admin::fetch_namespaces;
@@ -37,12 +37,14 @@ async fn main() -> () {
 
     match run().await {
         Ok(_) => println!("bye!"),
-        Err(error) => eprintln!("Failed unexpectedlly. Reason: {:?}", error.source()),
+        Err(error) => eprintln!("Failed unexpectedlly. Reason: {:?}", error),
     }
 }
 
 async fn run() -> anyhow::Result<()> {
+    // let app_config = read_config("config/local.toml")?;
     let app_config = read_config("config/staging.toml")?;
+    // let app_config = read_config("config/production.toml")?;
 
     let url = &app_config.pulsar_url.clone();
 
@@ -80,7 +82,7 @@ async fn run() -> anyhow::Result<()> {
     let control_sender = sender.clone();
     //can we use tokio thread here?
     let _handle = thread::spawn(move || listen_for_control(control_sender));
-    let namespaces: Vec<Content> = fetch_namespaces(&default_tenant, &conf).await?;
+    let namespaces: Vec<Namespace> = fetch_namespaces(&default_tenant, &conf).await?;
 
     let mut app = App {
         pulsar: PulsarApp {
@@ -91,15 +93,13 @@ async fn run() -> anyhow::Result<()> {
             active_sub_handle: None,
         },
         error_to_show: None,
-        active_resource: Resource::Namespaces,
-        contents: namespaces,
+        active_resource: Resource::Namespaces { namespaces },
         content_cursor: Some(0),
         last_cursor: None,
         last_tenant: Some(default_tenant),
         last_namespace: None,
         last_topic: None,
         pulsar_admin_cfg: conf,
-        selected_side: Side::Left,
     };
 
     let mut stdout = io::stdout();
