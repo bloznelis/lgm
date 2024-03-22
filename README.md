@@ -14,6 +14,10 @@ Puslar cluser managment app in terminal.
     * Delete subscription
 * Some kind of dialog modal for confirmation
 * Randomize subscription name to avoid collisions
-* `last_cursor` needs to be stored in a map, where key is a resource type e.g.: {tenants -> 2, namespaces -> 5}
 * Check status codes returned from the Pulsar Admin API.
     * For example if it's Unauthorized we should try to parse the body
+* Show cluster name
+* Read connection info from ~/.config/pulsar/config
+* There's a bug while backing out of Listening mode, the cursor dissapears.
+    * But should rework the cursor handling either way, each resource should have their own cursor.
+    That way we can drop "last_*" fields from the App, and always come back to the position we were before in that particular resource.
