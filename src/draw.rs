@@ -1,6 +1,7 @@
 use std::usize;
 
 use ratatui::layout::Rect;
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::Wrap;
 
@@ -15,7 +16,7 @@ use crate::update::{Namespace, SubMessage, Subscription, Tenant, Topic};
 use crate::{App, Resource, Side};
 
 struct HeaderLayout {
-    help: Rect,
+    help_rects: Vec<Rect>,
     logo: Rect,
 }
 
@@ -184,11 +185,11 @@ fn draw_listening(
 ) -> () {
     let help = vec![
         HelpItem::new("<esc>", "back"),
-        HelpItem::new("y", "copy to clipboard"),
+        HelpItem::new("<tab>", "cycle side"),
         HelpItem::new("u", "seek 1h"),
         HelpItem::new("i", "seek 24h"),
         HelpItem::new("o", "seek 1 week"),
-        HelpItem::new("<tab>", "cycle selected side"),
+        HelpItem::new("y", "copy to clipboard"),
     ];
     draw_help(frame, layout, help);
 
@@ -203,7 +204,11 @@ fn draw_listening(
 
     let content_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Plain)
+        .border_type(if matches!(side, Side::Left { .. }) {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        })
         .title("Subscriptions".to_string())
         .title_alignment(Alignment::Center)
         .title_style(Style::default().fg(Color::Green))
@@ -277,15 +282,20 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
 
             let header_chunks = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .constraints([
+                    Constraint::Percentage(10),
+                    Constraint::Percentage(10),
+                    Constraint::Percentage(10),
+                    Constraint::Percentage(70),
+                ])
                 .split(chunks[0]);
 
             let main = chunks[2];
 
             LayoutChunks {
                 header: HeaderLayout {
-                    help: header_chunks[0],
-                    logo: header_chunks[1],
+                    help_rects: vec![header_chunks[0], header_chunks[1], header_chunks[3]],
+                    logo: header_chunks[3],
                 },
                 message: Some(chunks[1].into()),
                 main,
@@ -299,15 +309,20 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
 
             let header_chunks = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .constraints([
+                    Constraint::Percentage(10),
+                    Constraint::Percentage(10),
+                    Constraint::Percentage(10),
+                    Constraint::Percentage(70),
+                ])
                 .split(chunks[0]);
 
             let main = chunks[1];
 
             LayoutChunks {
                 header: HeaderLayout {
-                    help: header_chunks[0],
-                    logo: header_chunks[1],
+                    help_rects: vec![header_chunks[0], header_chunks[1], header_chunks[3]],
+                    logo: header_chunks[3],
                 },
                 message: None,
                 main,
@@ -336,9 +351,18 @@ fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<HelpItem>
     let help_block = Block::default()
         .borders(Borders::NONE)
         .padding(Padding::new(1, 1, 1, 1));
-    let help_list = List::new(help_items).block(help_block);
 
-    frame.render_widget(help_list, layout.header.help);
+    let lines: Vec<Line> = help_items
+        .into_iter()
+        .map(|help| Line::from(help))
+        .collect();
+
+    lines
+        .chunks(5)
+        .into_iter()
+        .map(|lines| Paragraph::new(Text::from(lines.to_vec())).block(help_block.clone()))
+        .enumerate()
+        .for_each(|(i, p)| frame.render_widget(p, layout.header.help_rects[i]));
 }
 
 fn draw_error(frame: &mut Frame, app: &App, layout: &LayoutChunks) -> () {
@@ -373,7 +397,11 @@ impl HelpItem {
 impl From<HelpItem> for Line<'_> {
     fn from(value: HelpItem) -> Self {
         Line::from(vec![
-            Span::raw(value.keybind).style(Style::default().fg(Color::Green)),
+            Span::raw(value.keybind).style(
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" "),
             Span::raw(value.description),
         ])
@@ -382,12 +410,11 @@ impl From<HelpItem> for Line<'_> {
 
 impl From<HelpItem> for String {
     fn from(value: HelpItem) -> Self {
-        Line::from(vec![
+        String::from(Line::from(vec![
             Span::raw(value.keybind).style(Style::default().fg(Color::Green)),
             Span::raw(" "),
             Span::raw(value.description),
-        ])
-        .into()
+        ]))
     }
 }
 
