@@ -121,7 +121,7 @@ fn draw_topics(
 ) -> () {
     let help = vec![
         HelpItem::new("<esc>", "back"),
-        HelpItem::new("<enter>", "topics"),
+        HelpItem::new("<enter>", "subscriptions"),
     ];
     draw_help(frame, layout, help);
 
@@ -151,7 +151,6 @@ fn draw_subscriptions(
     let help = vec![
         HelpItem::new("<esc>", "back"),
         HelpItem::new("<c-s>", "listen"),
-        HelpItem::new("<enter>", "subscriptions"),
     ];
     draw_help(frame, layout, help);
 
@@ -283,10 +282,11 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
             let header_chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(70),
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(40),
                 ])
                 .split(chunks[0]);
 
@@ -294,8 +294,8 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
 
             LayoutChunks {
                 header: HeaderLayout {
-                    help_rects: vec![header_chunks[0], header_chunks[1], header_chunks[3]],
-                    logo: header_chunks[3],
+                    help_rects: vec![header_chunks[0], header_chunks[1], header_chunks[2]],
+                    logo: header_chunks[4],
                 },
                 message: Some(chunks[1].into()),
                 main,
@@ -310,10 +310,11 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
             let header_chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(70),
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(40),
                 ])
                 .split(chunks[0]);
 
@@ -321,8 +322,8 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
 
             LayoutChunks {
                 header: HeaderLayout {
-                    help_rects: vec![header_chunks[0], header_chunks[1], header_chunks[3]],
-                    logo: header_chunks[3],
+                    help_rects: vec![header_chunks[0], header_chunks[1], header_chunks[2]],
+                    logo: header_chunks[4],
                 },
                 message: None,
                 main,
