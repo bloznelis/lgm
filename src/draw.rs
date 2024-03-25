@@ -121,7 +121,8 @@ fn draw_topics(
 ) -> () {
     let help = vec![
         HelpItem::new("<esc>", "back"),
-        HelpItem::new("<enter>", "subscriptions"),
+        HelpItem::new("<enter>", "subs"),
+        HelpItem::new("<c-s>", "listen"),
     ];
     draw_help(frame, layout, help);
 
@@ -150,7 +151,6 @@ fn draw_subscriptions(
 ) -> () {
     let help = vec![
         HelpItem::new("<esc>", "back"),
-        HelpItem::new("<c-s>", "listen"),
     ];
     draw_help(frame, layout, help);
 
