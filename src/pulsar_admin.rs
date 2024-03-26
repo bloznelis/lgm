@@ -12,6 +12,10 @@ use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_topics;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_get_subscriptions;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_reset_cursor;
 
+
+// TODO: to fetch subscription stats persistent_topics_get_partitioned_stats should be used
+// and PartitionedTopicStatsImpl's subcriptions field will contain the sub info
+
 pub async fn fetch_anything(url: String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
     let client = reqwest::Client::new();
     let response = client
