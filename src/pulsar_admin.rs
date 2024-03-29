@@ -6,15 +6,13 @@ use crate::update::Topic;
 use anyhow::{anyhow, Result};
 use chrono::TimeDelta;
 use chrono::Utc;
+use itertools::Itertools;
 use pulsar_admin_sdk::apis::configuration::Configuration;
 use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_tenant_namespaces;
 use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_topics;
+use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_get_stats;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_get_subscriptions;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_reset_cursor;
-
-
-// TODO: to fetch subscription stats persistent_topics_get_partitioned_stats should be used
-// and PartitionedTopicStatsImpl's subcriptions field will contain the sub info
 
 pub async fn fetch_anything(url: String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
     let client = reqwest::Client::new();
@@ -27,6 +25,48 @@ pub async fn fetch_anything(url: String, token: &Token) -> Result<Vec<String>, r
     let array: Vec<String> = response.json().await?;
 
     Ok(array)
+}
+
+pub async fn fetch_subs(
+    tenant: &str,
+    namespace: &str,
+    topic: &str,
+    cfg: &Configuration,
+) -> anyhow::Result<Vec<Subscription>> {
+    let res = persistent_topics_get_stats(
+        cfg,
+        tenant,
+        namespace,
+        topic,
+        None,
+        None,
+        Some(true),
+        None,
+        None,
+        None,
+    );
+    let result = res
+        .await
+        .map_err(|err| {
+            anyhow!(
+                "Failed to fetch subscriptions (topic stats) {} {} {} {}",
+                tenant,
+                namespace,
+                topic,
+                err
+            )
+        })?
+        .subscriptions
+        .map(|subs| {
+            subs.iter()
+                .map(|(a, b)| Subscription {
+                    name: a.to_string(),
+                    backlog_size: b.backlog_size.unwrap_or(0),
+                })
+                .collect_vec()
+        }).unwrap_or(vec![]);
+
+    Ok(result)
 }
 
 pub async fn fetch_tenants(token: &Token) -> Result<Vec<Tenant>, reqwest::Error> {
@@ -118,7 +158,11 @@ pub async fn fetch_subscriptions(
             )
         })?
         .iter()
-        .map(|sub| Subscription { name: sub.to_string() })
+        // TODO: get the backlog size here.
+        .map(|sub| Subscription {
+            name: sub.to_string(),
+            backlog_size: 0,
+        })
         .collect();
 
     Ok(result)
