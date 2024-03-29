@@ -3,7 +3,7 @@ use std::usize;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::Wrap;
+use ratatui::widgets::{Cell, Row, Table, TableState, Wrap};
 
 use ratatui::{
     prelude::{Alignment, Constraint, Direction, Layout},
@@ -149,9 +149,7 @@ fn draw_subscriptions(
     subscriptions: &Vec<Subscription>,
     cursor: Option<usize>,
 ) -> () {
-    let help = vec![
-        HelpItem::new("<esc>", "back"),
-    ];
+    let help = vec![HelpItem::new("<esc>", "back")];
     draw_help(frame, layout, help);
 
     let content_block = Block::default()
@@ -162,17 +160,32 @@ fn draw_subscriptions(
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
-    let content_list = List::new(
+    let widths = [Constraint::Percentage(50), Constraint::Percentage(50)];
+
+
+    let table = Table::new(
         subscriptions
             .iter()
-            .map(|subscription| subscription.name.to_string()),
+            .map(|sub| Row::new(vec![Cell::new(sub.name.to_string()), style_backlog_cell(sub.backlog_size)])),
+        widths,
     )
+    .header(Row::new(vec!["name".to_string(), "backlog".to_string()]))
     .block(content_block)
     .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
-    let mut state = ListState::default().with_selected(cursor);
+    let mut state = TableState::default().with_selected(cursor);
 
-    frame.render_stateful_widget(content_list, layout.main, &mut state);
+    frame.render_stateful_widget(table, layout.main, &mut state);
+}
+
+fn style_backlog_cell(backlog: i64) -> Cell<'static> {
+    let style = match backlog {
+        backlog if backlog > 100 => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        backlog if backlog > 10 => Style::default().fg(Color::Yellow),
+        _ => Style::default(),
+    };
+
+    Cell::new(format!("{}", backlog)).style(style)
 }
 
 fn draw_listening(
@@ -422,5 +435,14 @@ impl From<HelpItem> for String {
 impl From<HelpItem> for Text<'_> {
     fn from(value: HelpItem) -> Self {
         Text::from(Into::<Line>::into(value))
+    }
+}
+
+impl From<Subscription> for Row<'_> {
+    fn from(value: Subscription) -> Self {
+        Row::new(vec![
+            Cell::new(value.name),
+            Cell::new(format!("{}", value.backlog_size)),
+        ])
     }
 }

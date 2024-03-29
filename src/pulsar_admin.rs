@@ -11,7 +11,6 @@ use pulsar_admin_sdk::apis::configuration::Configuration;
 use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_tenant_namespaces;
 use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_topics;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_get_stats;
-use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_get_subscriptions;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_reset_cursor;
 
 pub async fn fetch_anything(url: String, token: &Token) -> Result<Vec<String>, reqwest::Error> {
@@ -61,10 +60,11 @@ pub async fn fetch_subs(
             subs.iter()
                 .map(|(a, b)| Subscription {
                     name: a.to_string(),
-                    backlog_size: b.backlog_size.unwrap_or(0),
+                    backlog_size: b.msg_backlog.unwrap_or(0),
                 })
                 .collect_vec()
-        }).unwrap_or(vec![]);
+        })
+        .unwrap_or(vec![]);
 
     Ok(result)
 }
@@ -138,32 +138,4 @@ pub async fn fetch_topics(
         .collect();
 
     Ok(perfix_dropped)
-}
-
-pub async fn fetch_subscriptions(
-    tenant: &str,
-    namespace: &str,
-    topic: &str,
-    cfg: &Configuration,
-) -> anyhow::Result<Vec<Subscription>> {
-    let result = persistent_topics_get_subscriptions(&cfg, tenant, namespace, topic, None)
-        .await
-        .map_err(|err| {
-            anyhow!(
-                "Failed to fetch subscriptions {} {} {} {}",
-                tenant,
-                namespace,
-                topic,
-                err
-            )
-        })?
-        .iter()
-        // TODO: get the backlog size here.
-        .map(|sub| Subscription {
-            name: sub.to_string(),
-            backlog_size: 0,
-        })
-        .collect();
-
-    Ok(result)
 }
