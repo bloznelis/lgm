@@ -94,6 +94,7 @@ pub struct Topic {
 #[derive(Clone, Debug)]
 pub struct Subscription {
     pub name: String,
+    pub backlog_size: i64
 }
 
 #[derive(Clone, Debug)]
@@ -490,7 +491,7 @@ pub async fn update(
                         if let Some(cursor) = app.content_cursor {
                             if !topics.is_empty() {
                                 let topic = &topics[cursor].name;
-                                let subscriptions = pulsar_admin::fetch_subscriptions(
+                                let subscriptions = pulsar_admin::fetch_subs(
                                     &app.last_tenant.clone().unwrap(),
                                     app.last_namespace.as_ref().unwrap(),
                                     topic,
