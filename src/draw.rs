@@ -160,16 +160,15 @@ fn draw_subscriptions(
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
-    let widths = [Constraint::Percentage(50), Constraint::Percentage(50)];
-
+    let widths = [Constraint::Ratio(1, 3), Constraint::Ratio(1, 3), Constraint::Ratio(1, 3)];
 
     let table = Table::new(
         subscriptions
             .iter()
-            .map(|sub| Row::new(vec![Cell::new(sub.name.to_string()), style_backlog_cell(sub.backlog_size)])),
+            .map(|sub| Row::new(vec![Cell::new(sub.name.clone()), Cell::new(sub.sub_type.clone()), style_backlog_cell(sub.backlog_size)])),
         widths,
     )
-    .header(Row::new(vec!["name".to_string(), "backlog".to_string()]))
+    .header(Row::new(vec!["name".to_string(), "type".to_string(), "backlog".to_string()]))
     .block(content_block)
     .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 

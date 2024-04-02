@@ -4,12 +4,6 @@ Puslar cluser managment app in terminal.
 > [[0]](https://www.aps.org/publications/apsnews/200602/history.cfm)
 
 ### TODO
-* Show resources as tables with additional info as columns
-    * For example consumer count on subscriptions
-* Track full resource path
-    * Will be clear which tenant/namespace/topic we are in
-    * Present it nicely
-    * It will allow to backtrack
 * More commands
     * Delete subscription
 * Some kind of dialog modal for confirmation

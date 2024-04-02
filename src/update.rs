@@ -94,6 +94,7 @@ pub struct Topic {
 #[derive(Clone, Debug)]
 pub struct Subscription {
     pub name: String,
+    pub sub_type: String,
     pub backlog_size: i64
 }
 
@@ -102,48 +103,6 @@ pub struct SubMessage {
     pub body: String,
     pub properties: Vec<String>,
 }
-
-// fn get_topic_fqn(content: &Content) -> Option<String> {
-//     match content {
-//         Content::Tenant(Tenant { .. }) => None,
-//         Content::Topic(Topic { name: _, fqn }) => Some(fqn.to_string()),
-//         Content::Namespace(Namespace { name: _ }) => None,
-//         Content::Subscription(Subscription { .. }) => None,
-//         Content::SubMessage(SubMessage { .. }) => None,
-//     }
-// }
-// fn get_name(content: Content) -> Option<String> {
-//     match content {
-//         Content::Tenant(Tenant { name }) => Some(name),
-//         Content::Topic(Topic { name, .. }) => Some(name),
-//         Content::Namespace(Namespace { name }) => Some(name),
-//         Content::Subscription(Subscription { name }) => Some(name),
-//         Content::SubMessage(SubMessage { .. }) => None,
-//     }
-// }
-//
-// pub fn get_show(content: Content) -> Option<String> {
-//     match content {
-//         Content::Tenant(Tenant { name }) => Some(name),
-//         Content::Topic(Topic { name, .. }) => Some(name),
-//         Content::Namespace(Namespace { name }) => Some(name),
-//         Content::Subscription(Subscription { name }) => Some(name),
-//         Content::SubMessage(SubMessage { body, .. }) => Some(body),
-//     }
-// }
-//
-// pub fn get_show_alternative(content: Content) -> Option<String> {
-//     match content {
-//         Content::Tenant(Tenant { name }) => Some(name),
-//         Content::Topic(Topic { name, .. }) => Some(name),
-//         Content::Namespace(Namespace { name }) => Some(name),
-//         Content::Subscription(Subscription { name }) => Some(name),
-//         Content::SubMessage(SubMessage {
-//             body: _,
-//             properties,
-//         }) => Some(properties.join("\n")),
-//     }
-// }
 
 pub struct App {
     pub pulsar: PulsarApp,

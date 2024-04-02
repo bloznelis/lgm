@@ -58,9 +58,10 @@ pub async fn fetch_subs(
         .subscriptions
         .map(|subs| {
             subs.iter()
-                .map(|(a, b)| Subscription {
-                    name: a.to_string(),
-                    backlog_size: b.msg_backlog.unwrap_or(0),
+                .map(|(key, value)| Subscription {
+                    name: key.to_string(),
+                    sub_type: value.r#type.clone().unwrap_or("no_type".to_string()),
+                    backlog_size: value.msg_backlog.unwrap_or(0),
                 })
                 .collect_vec()
         })
