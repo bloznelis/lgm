@@ -37,7 +37,7 @@ pub fn draw_new(frame: &mut Frame, app: &App) -> () {
         Resource::Namespaces { namespaces } => draw_namespaces(
             frame,
             layout,
-            app.last_tenant.clone().unwrap_or("".to_string()),
+            clone_or_empty(&app.last_tenant),
             namespaces,
             app.content_cursor,
         ),
@@ -45,9 +45,7 @@ pub fn draw_new(frame: &mut Frame, app: &App) -> () {
         Resource::Topics { topics } => draw_topics(
             frame,
             layout,
-            app.last_namespace
-                .clone()
-                .unwrap_or("".to_string()),
+            clone_or_empty(&app.last_namespace),
             topics,
             app.content_cursor,
         ),
@@ -55,7 +53,7 @@ pub fn draw_new(frame: &mut Frame, app: &App) -> () {
         Resource::Subscriptions { subscriptions } => draw_subscriptions(
             frame,
             layout,
-            app.last_topic.clone().unwrap_or("".to_string()),
+            clone_or_empty(&app.last_topic),
             subscriptions,
             app.content_cursor,
         ),
@@ -68,6 +66,10 @@ pub fn draw_new(frame: &mut Frame, app: &App) -> () {
     app.confirmation_modal
         .as_ref()
         .map(|modal| draw_confirmation_modal(frame, modal));
+}
+
+fn clone_or_empty(str: &Option<String>) -> String {
+    str.clone().unwrap_or("".to_string())
 }
 
 fn draw_confirmation_modal(frame: &mut Frame, modal: &ConfirmationModal) -> () {
@@ -192,7 +194,7 @@ fn draw_topics(
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
-    let content_list = List::new(topics.iter().map(|topic| topic.fqn.to_string()))
+    let content_list = List::new(topics.iter().map(|topic| topic.name.to_string()))
         .block(content_block)
         .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
