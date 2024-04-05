@@ -10,6 +10,7 @@ use itertools::Itertools;
 use pulsar_admin_sdk::apis::configuration::Configuration;
 use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_tenant_namespaces;
 use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_topics;
+use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_delete_subscription;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_get_stats;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_reset_cursor;
 
@@ -60,7 +61,10 @@ pub async fn fetch_subs(
             subs.iter()
                 .map(|(key, value)| Subscription {
                     name: key.to_string(),
-                    sub_type: value.r#type.clone().unwrap_or("no_type".to_string()),
+                    sub_type: value
+                        .r#type
+                        .clone()
+                        .unwrap_or("no_type".to_string()),
                     backlog_size: value.msg_backlog.unwrap_or(0),
                 })
                 .collect_vec()
@@ -96,6 +100,18 @@ pub async fn reset_subscription(
     persistent_topics_reset_cursor(cfg, tenant, namespace, topic, sub_name, timestamp, None)
         .await
         .map_err(|err| anyhow!("Failed to seek back subscription {}", err))
+}
+
+pub async fn delete_subscription(
+    tenant: &str,
+    namespace: &str,
+    topic: &str,
+    sub_name: &str,
+    cfg: &Configuration,
+) -> anyhow::Result<()> {
+    persistent_topics_delete_subscription(cfg, tenant, namespace, topic, sub_name, Some(true), None)
+        .await
+        .map_err(|err| anyhow!("Failed to delete subscription {}", err))
 }
 
 pub async fn fetch_namespaces(tenant: &str, cfg: &Configuration) -> anyhow::Result<Vec<Namespace>> {

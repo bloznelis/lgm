@@ -8,11 +8,11 @@ use ratatui::widgets::{Cell, Row, Table, TableState, Wrap};
 use ratatui::{
     prelude::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
-    widgets::{Block, BorderType, Borders, List, ListState, Padding, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, ListState, Padding, Paragraph},
     Frame,
 };
 
-use crate::update::{Namespace, SubMessage, Subscription, Tenant, Topic};
+use crate::update::{ConfirmationModal, Namespace, SubMessage, Subscription, Tenant, Topic};
 use crate::{App, Resource, Side};
 
 struct HeaderLayout {
@@ -48,6 +48,45 @@ pub fn draw_new(frame: &mut Frame, app: &App) -> () {
             draw_listening(frame, layout, messages, selected_side, app.content_cursor)
         }
     }
+
+    app.confirmation_modal
+        .as_ref()
+        .map(|modal| draw_confirmation_modal(frame, modal));
+}
+
+fn draw_confirmation_modal(frame: &mut Frame, modal: &ConfirmationModal) -> () {
+    let message = format!(
+        "{}\n\n\n n to cancel | <c-a> to accept",
+        modal.message.clone()
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain).border_style(Style::new().fg(Color::Red));
+    let paragraph = Paragraph::new(message)
+        .centered()
+        .wrap(Wrap { trim: false })
+        .block(block)
+        .style(Style::new());
+    let rect = centered_rect(35, 10, frame.size());
+
+    frame.render_widget(Clear, rect);
+    frame.render_widget(paragraph, rect)
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::vertical([
+        Constraint::Percentage((100 - percent_y) / 2),
+        Constraint::Percentage(percent_y),
+        Constraint::Percentage((100 - percent_y) / 2),
+    ])
+    .split(r);
+
+    Layout::horizontal([
+        Constraint::Percentage((100 - percent_x) / 2),
+        Constraint::Percentage(percent_x),
+        Constraint::Percentage((100 - percent_x) / 2),
+    ])
+    .split(popup_layout[1])[1]
 }
 
 fn draw_tenants(
@@ -149,7 +188,10 @@ fn draw_subscriptions(
     subscriptions: &Vec<Subscription>,
     cursor: Option<usize>,
 ) -> () {
-    let help = vec![HelpItem::new("<esc>", "back")];
+    let help = vec![
+        HelpItem::new("<esc>", "back"),
+        HelpItem::new("<c-d>", "delete"),
+    ];
     draw_help(frame, layout, help);
 
     let content_block = Block::default()
@@ -160,15 +202,27 @@ fn draw_subscriptions(
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
-    let widths = [Constraint::Ratio(1, 3), Constraint::Ratio(1, 3), Constraint::Ratio(1, 3)];
+    let widths = [
+        Constraint::Ratio(1, 3),
+        Constraint::Ratio(1, 3),
+        Constraint::Ratio(1, 3),
+    ];
 
     let table = Table::new(
-        subscriptions
-            .iter()
-            .map(|sub| Row::new(vec![Cell::new(sub.name.clone()), Cell::new(sub.sub_type.clone()), style_backlog_cell(sub.backlog_size)])),
+        subscriptions.iter().map(|sub| {
+            Row::new(vec![
+                Cell::new(sub.name.clone()),
+                Cell::new(sub.sub_type.clone()),
+                style_backlog_cell(sub.backlog_size),
+            ])
+        }),
         widths,
     )
-    .header(Row::new(vec!["name".to_string(), "type".to_string(), "backlog".to_string()]))
+    .header(Row::new(vec![
+        "name".to_string(),
+        "type".to_string(),
+        "backlog".to_string(),
+    ]))
     .block(content_block)
     .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
@@ -179,7 +233,9 @@ fn draw_subscriptions(
 
 fn style_backlog_cell(backlog: i64) -> Cell<'static> {
     let style = match backlog {
-        backlog if backlog > 100 => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        backlog if backlog > 100 => Style::default()
+            .fg(Color::Red)
+            .add_modifier(Modifier::BOLD),
         backlog if backlog > 10 => Style::default().fg(Color::Yellow),
         _ => Style::default(),
     };

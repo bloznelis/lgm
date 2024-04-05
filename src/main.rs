@@ -7,7 +7,6 @@ pub mod update;
 use crate::update::update;
 
 use auth::{auth, read_config};
-use update::{App, PulsarApp, Resource, Side, Namespace};
 use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
 use pulsar::{Pulsar, TokioExecutor};
 use pulsar_admin::fetch_namespaces;
@@ -22,6 +21,7 @@ use std::{
     thread,
 };
 use tokio::sync::Mutex;
+use update::{App, Namespace, PulsarApp, Resource, Side, ConfirmedCommand};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
@@ -29,7 +29,6 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-
 
 #[tokio::main]
 async fn main() -> () {
@@ -92,6 +91,7 @@ async fn run() -> anyhow::Result<()> {
             token,
             active_sub_handle: None,
         },
+        confirmation_modal: None,
         error_to_show: None,
         active_resource: Resource::Namespaces { namespaces },
         content_cursor: Some(0),
@@ -126,18 +126,22 @@ pub enum ControlEvent {
     Up,
     Down,
     Terminate,
+    Delete,
     Subscribe,
+    Accept,
+    Refuse,
     ResetSubscription(ResetLength),
 }
 
 pub enum ResetLength {
     OneHour,
     TwentyFourHours,
-    Week
+    Week,
 }
 
 pub enum AppEvent {
     Control(ControlEvent),
+    Command(ConfirmedCommand),
     SubscriptionEvent(TopicEvent),
 }
 
@@ -145,23 +149,34 @@ fn listen_for_control(sender: Sender<AppEvent>) {
     loop {
         let event = match event::read().unwrap() {
             Event::Key(key) => match key.code {
+                KeyCode::Char('a')
+                    if key.modifiers == KeyModifiers::CONTROL =>
+                {
+                    Some(AppEvent::Control(ControlEvent::Accept))
+                }
+                KeyCode::Char('n') => {
+                    Some(AppEvent::Control(ControlEvent::Refuse))
+                }
                 KeyCode::Char('c') | KeyCode::Char('q')
                     if key.modifiers == KeyModifiers::CONTROL =>
                 {
                     Some(AppEvent::Control(ControlEvent::Terminate))
                 }
+                KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
+                    Some(AppEvent::Control(ControlEvent::Delete))
+                }
                 KeyCode::Char('s') if key.modifiers == KeyModifiers::CONTROL => {
                     Some(AppEvent::Control(ControlEvent::Subscribe))
-                },
-                KeyCode::Char('u') => {
-                    Some(AppEvent::Control(ControlEvent::ResetSubscription(ResetLength::OneHour)))
                 }
-                KeyCode::Char('i') => {
-                    Some(AppEvent::Control(ControlEvent::ResetSubscription(ResetLength::TwentyFourHours)))
-                }
-                KeyCode::Char('o') => {
-                    Some(AppEvent::Control(ControlEvent::ResetSubscription(ResetLength::Week)))
-                }
+                KeyCode::Char('u') => Some(AppEvent::Control(ControlEvent::ResetSubscription(
+                    ResetLength::OneHour,
+                ))),
+                KeyCode::Char('i') => Some(AppEvent::Control(ControlEvent::ResetSubscription(
+                    ResetLength::TwentyFourHours,
+                ))),
+                KeyCode::Char('o') => Some(AppEvent::Control(ControlEvent::ResetSubscription(
+                    ResetLength::Week,
+                ))),
                 KeyCode::Tab => Some(AppEvent::Control(ControlEvent::CycleSide)),
                 KeyCode::Enter => Some(AppEvent::Control(ControlEvent::Enter)),
                 KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => {
