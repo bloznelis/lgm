@@ -4,9 +4,6 @@ Puslar cluser managment app in terminal.
 > [[0]](https://www.aps.org/publications/apsnews/200602/history.cfm)
 
 ### TODO
-* More commands
-    * Delete subscription
-* Some kind of dialog modal for confirmation
 * Randomize subscription name to avoid collisions
 * Check status codes returned from the Pulsar Admin API.
     * For example if it's Unauthorized we should try to parse the body
@@ -17,3 +14,4 @@ Puslar cluser managment app in terminal.
     That way we can drop "last_*" fields from the App, and always come back to the position we were before in that particular resource.
 * Information messages (e.g. "copied to clipboard!")
     * One way to stop showing them would be to assign it a timestamp after which it should disappear.
+* To show topic stats, we have to fetch them one-by-one. This seems to be annoying to do in std Rust, so look into Tokio streams.
