@@ -34,15 +34,31 @@ pub fn draw_new(frame: &mut Frame, app: &App) -> () {
     match &app.active_resource {
         Resource::Tenants { tenants } => draw_tenants(frame, layout, tenants, app.content_cursor),
 
-        Resource::Namespaces { namespaces } => {
-            draw_namespaces(frame, layout, namespaces, app.content_cursor)
-        }
+        Resource::Namespaces { namespaces } => draw_namespaces(
+            frame,
+            layout,
+            app.last_tenant.clone().unwrap_or("".to_string()),
+            namespaces,
+            app.content_cursor,
+        ),
 
-        Resource::Topics { topics } => draw_topics(frame, layout, topics, app.content_cursor),
+        Resource::Topics { topics } => draw_topics(
+            frame,
+            layout,
+            app.last_namespace
+                .clone()
+                .unwrap_or("".to_string()),
+            topics,
+            app.content_cursor,
+        ),
 
-        Resource::Subscriptions { subscriptions } => {
-            draw_subscriptions(frame, layout, subscriptions, app.content_cursor)
-        }
+        Resource::Subscriptions { subscriptions } => draw_subscriptions(
+            frame,
+            layout,
+            app.last_topic.clone().unwrap_or("".to_string()),
+            subscriptions,
+            app.content_cursor,
+        ),
 
         Resource::Listening { messages, selected_side } => {
             draw_listening(frame, layout, messages, selected_side, app.content_cursor)
@@ -61,7 +77,8 @@ fn draw_confirmation_modal(frame: &mut Frame, modal: &ConfirmationModal) -> () {
     );
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Plain).border_style(Style::new().fg(Color::Red));
+        .border_type(BorderType::Plain)
+        .border_style(Style::new().fg(Color::Red));
     let paragraph = Paragraph::new(message)
         .centered()
         .wrap(Wrap { trim: false })
@@ -122,6 +139,7 @@ fn draw_tenants(
 fn draw_namespaces(
     frame: &mut Frame,
     layout: &LayoutChunks,
+    tenant: String,
     namespaces: &Vec<Namespace>,
     cursor: Option<usize>,
 ) -> () {
@@ -134,7 +152,7 @@ fn draw_namespaces(
     let content_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
-        .title("Namespaces".to_string())
+        .title(format!("Namespaces of {}", tenant))
         .title_alignment(Alignment::Center)
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
@@ -155,6 +173,7 @@ fn draw_namespaces(
 fn draw_topics(
     frame: &mut Frame,
     layout: &LayoutChunks,
+    namespace: String,
     topics: &Vec<Topic>,
     cursor: Option<usize>,
 ) -> () {
@@ -168,12 +187,12 @@ fn draw_topics(
     let content_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
-        .title("Topics".to_string())
+        .title(format!("Topics of {}", namespace))
         .title_alignment(Alignment::Center)
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
-    let content_list = List::new(topics.iter().map(|topic| topic.name.to_string()))
+    let content_list = List::new(topics.iter().map(|topic| topic.fqn.to_string()))
         .block(content_block)
         .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
@@ -185,6 +204,7 @@ fn draw_topics(
 fn draw_subscriptions(
     frame: &mut Frame,
     layout: &LayoutChunks,
+    topic: String,
     subscriptions: &Vec<Subscription>,
     cursor: Option<usize>,
 ) -> () {
@@ -197,7 +217,7 @@ fn draw_subscriptions(
     let content_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
-        .title("Subscriptions".to_string())
+        .title(format!("Subscriptions of {}", topic))
         .title_alignment(Alignment::Center)
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
