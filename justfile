@@ -2,6 +2,10 @@
 help:
   just --list
 
+# Check the program
+check:
+  cargo check
+
 # Run the program
 run:
   cargo run -- --config config/local.toml
