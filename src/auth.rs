@@ -1,7 +1,7 @@
 use anyhow::Result;
 use reqwest::{header::{HeaderMap, ACCEPT, CONTENT_TYPE}, Url};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::{fs, path::PathBuf};
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
@@ -87,7 +87,7 @@ pub async fn auth(cfg: Config) -> anyhow::Result<Token> {
     Ok(token)
 }
 
-pub fn read_config(path: &str) -> Result<Config> {
+pub fn read_config(path: PathBuf) -> Result<Config> {
     let contents = fs::read_to_string(path)?;
     let config: Config = toml::from_str(&contents)?;
     Ok(config)

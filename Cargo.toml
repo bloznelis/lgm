@@ -21,3 +21,4 @@ pulsar-admin-sdk = "2.1.0"
 clipboard = "0.5.0"
 chrono = "0.4.35"
 itertools = "0.12.1"
+clap = { version = "4.5.4", features = ["derive"] }
