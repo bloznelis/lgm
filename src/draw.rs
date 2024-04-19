@@ -74,7 +74,7 @@ fn clone_or_empty(str: &Option<String>) -> String {
 
 fn draw_confirmation_modal(frame: &mut Frame, modal: &ConfirmationModal) -> () {
     let message = format!(
-        "{}\n\n\n n to cancel | <c-a> to accept",
+        "{}\n\n n to cancel | <c-a> to accept",
         modal.message.clone()
     );
     let block = Block::default()
@@ -86,7 +86,7 @@ fn draw_confirmation_modal(frame: &mut Frame, modal: &ConfirmationModal) -> () {
         .wrap(Wrap { trim: false })
         .block(block)
         .style(Style::new());
-    let rect = centered_rect(35, 10, frame.size());
+    let rect = centered_rect(35, 12, frame.size());
 
     frame.render_widget(Clear, rect);
     frame.render_widget(paragraph, rect)
