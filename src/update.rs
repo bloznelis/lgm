@@ -117,6 +117,14 @@ pub enum ConfirmedCommand {
         sub_name: String,
         cfg: Configuration,
     },
+    SeekSubscription {
+        tenant: String,
+        namespace: String,
+        topic: String,
+        sub_name: String,
+        time_delta: TimeDelta,
+        cfg: Configuration,
+    },
 }
 
 pub struct App {
@@ -153,6 +161,53 @@ pub async fn update(
         {
             app.error_to_show = None;
             match event {
+                AppEvent::Command(ConfirmedCommand::SeekSubscription {
+                    tenant,
+                    namespace,
+                    topic,
+                    sub_name,
+                    time_delta,
+                    cfg,
+                }) => {
+                    let result = pulsar_admin::reset_subscription(
+                        &tenant, &namespace, &topic, &sub_name, &cfg, time_delta,
+                    )
+                    .await;
+                    app.confirmation_modal = None;
+
+                    match result {
+                        Err(err) => app.error_to_show = Some(ErrorToShow::new(err.to_string())),
+                        Ok(_) => (),
+                    }
+
+                    //TODO: this is getting duplicated, move out to refresh_subscriptions function
+                    let subscriptions = pulsar_admin::fetch_subs(
+                        &app.last_tenant.clone().unwrap(),
+                        app.last_namespace.as_ref().unwrap(),
+                        &app.last_topic.as_ref().unwrap(),
+                        &app.pulsar_admin_cfg,
+                    )
+                    .await;
+
+                    match subscriptions {
+                        Ok(subscriptions) => {
+                            app.last_cursor = app.content_cursor;
+                            if !subscriptions.is_empty() {
+                                app.content_cursor = Some(0);
+                            } else {
+                                app.content_cursor = None;
+                            };
+                            app.active_resource = Resource::Subscriptions { subscriptions };
+                            app.last_topic = Some(topic.to_string())
+                        }
+                        Err(err) => {
+                            app.error_to_show = Some(ErrorToShow::new(format!(
+                                "Failed to fetch subscriptions :[\n {:?}",
+                                err
+                            )));
+                        }
+                    }
+                }
                 AppEvent::Command(ConfirmedCommand::DeleteSubscription {
                     tenant,
                     namespace,
@@ -264,6 +319,49 @@ pub async fn update(
                         match result {
                             Err(err) => app.error_to_show = Some(ErrorToShow::new(err.to_string())),
                             Ok(_) => (),
+                        }
+                    };
+                    if let Resource::Subscriptions { subscriptions } = &app.active_resource {
+                        if let Some(cursor) = app.content_cursor {
+                            let subscription = &subscriptions[cursor].name;
+
+                            let (time_delta, time_str) = match length {
+                                crate::ResetLength::OneHour => {
+                                    (TimeDelta::try_hours(1).expect("Expecting hours"), "1h")
+                                }
+                                crate::ResetLength::TwentyFourHours => {
+                                    (TimeDelta::try_hours(24).expect("Expecting hours"), "24h")
+                                }
+                                crate::ResetLength::Week => {
+                                    (TimeDelta::try_days(7).expect("Expecting days"), "7days")
+                                }
+                            };
+
+                            app.confirmation_modal = Some(ConfirmationModal {
+                                message: format!(
+                                    "Seek '{subscription}' subscription for {time_str}?",
+                                ),
+                                command: ConfirmedCommand::SeekSubscription {
+                                    tenant: app
+                                        .last_tenant
+                                        .as_ref()
+                                        .expect("Tenant must be set")
+                                        .clone(),
+                                    namespace: app
+                                        .last_namespace
+                                        .as_ref()
+                                        .expect("Namespace must be set")
+                                        .clone(),
+                                    topic: app
+                                        .last_topic
+                                        .as_ref()
+                                        .expect("Topic must be set")
+                                        .clone(),
+                                    sub_name: subscription.clone(),
+                                    time_delta,
+                                    cfg: app.pulsar_admin_cfg.clone(),
+                                },
+                            })
                         }
                     }
                 }

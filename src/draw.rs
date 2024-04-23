@@ -213,6 +213,9 @@ fn draw_subscriptions(
     let help = vec![
         HelpItem::new("<esc>", "back"),
         HelpItem::new("<c-d>", "delete"),
+        HelpItem::new("u", "seek 1h"),
+        HelpItem::new("i", "seek 24h"),
+        HelpItem::new("o", "seek 1 week"),
     ];
     draw_help(frame, layout, help);
 
