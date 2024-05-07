@@ -23,7 +23,10 @@ use std::{
     thread,
 };
 use tokio::sync::Mutex;
-use update::{App, ConfirmedCommand, Namespace, PulsarApp, Resource, Side};
+use update::{
+    App, ConfirmedCommand, Listening, Namespace, Namespaces, PulsarApp, Resource, Resources, Side,
+    Subscriptions, Tenant, Tenants, Topics,
+};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
@@ -40,7 +43,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> () {
+async fn main(){
     let args = Args::parse();
 
     match run(args).await {
@@ -108,12 +111,27 @@ async fn run(args: Args) -> anyhow::Result<()> {
         },
         confirmation_modal: None,
         error_to_show: None,
-        active_resource: Resource::Namespaces { namespaces },
-        content_cursor: Some(0),
-        last_cursor: None,
-        last_tenant: Some(default_tenant),
-        last_namespace: None,
-        last_topic: None,
+        active_resource: Resource::Namespaces,
+        resources: Resources {
+            tenants: Tenants {
+                tenants: vec![Tenant { name: default_tenant }],
+                cursor: Some(0),
+            },
+            namespaces: Namespaces {
+                namespaces,
+                cursor: Some(0), // FIXME: will crash on empty namespaces
+            },
+            topics: Topics { topics: vec![], cursor: None },
+            subscriptions: Subscriptions {
+                subscriptions: vec![],
+                cursor: None,
+            },
+            listening: Listening {
+                messages: vec![],
+                selected_side: Side::Left,
+                cursor: None,
+            },
+        },
         pulsar_admin_cfg: conf,
     };
 

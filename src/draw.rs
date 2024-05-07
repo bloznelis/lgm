@@ -12,7 +12,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::update::{ConfirmationModal, Namespace, SubMessage, Subscription, Tenant, Topic};
+use crate::update::{
+    ConfirmationModal, Listening, Namespaces, Subscription, Subscriptions, Tenants, Topics,
+};
 use crate::{App, Resource, Side};
 
 struct HeaderLayout {
@@ -26,53 +28,61 @@ struct LayoutChunks {
     main: Rect,
 }
 
-pub fn draw_new(frame: &mut Frame, app: &App) -> () {
+pub fn draw_new(frame: &mut Frame, app: &App) {
     let layout = &make_layout(frame, app);
     draw_logo(frame, layout);
     draw_error(frame, app, layout);
 
     match &app.active_resource {
-        Resource::Tenants { tenants } => draw_tenants(frame, layout, tenants, app.content_cursor),
+        Resource::Tenants => draw_tenants(frame, layout, &app.resources.tenants),
 
-        Resource::Namespaces { namespaces } => draw_namespaces(
+        Resource::Namespaces => draw_namespaces(
             frame,
             layout,
-            clone_or_empty(&app.last_tenant),
-            namespaces,
-            app.content_cursor,
+            app.resources
+                .selected_tenant()
+                .map(|tenant| tenant.name.clone())
+                .unwrap_or("".to_string()),
+            &app.resources.namespaces,
         ),
 
-        Resource::Topics { topics } => draw_topics(
+        Resource::Topics => draw_topics(
             frame,
             layout,
-            clone_or_empty(&app.last_namespace),
-            topics,
-            app.content_cursor,
+            app.resources
+                .selected_namespace()
+                .map(|tenant| tenant.name.clone())
+                .unwrap_or("".to_string()),
+            &app.resources.topics,
         ),
 
-        Resource::Subscriptions { subscriptions } => draw_subscriptions(
+        Resource::Subscriptions => draw_subscriptions(
             frame,
             layout,
-            clone_or_empty(&app.last_topic),
-            subscriptions,
-            app.content_cursor,
+            app.resources
+                .selected_topic()
+                .map(|tenant| tenant.name.clone())
+                .unwrap_or("".to_string()),
+            &app.resources.subscriptions,
         ),
 
-        Resource::Listening { messages, selected_side } => {
-            draw_listening(frame, layout, messages, selected_side, app.content_cursor)
-        }
+        Resource::Listening => draw_listening(
+            frame,
+            layout,
+            &app.resources.listening,
+            app.resources
+                .selected_topic()
+                .map(|topic| topic.name.clone())
+                .unwrap_or("".to_string()),
+        ),
     }
 
-    app.confirmation_modal
-        .as_ref()
-        .map(|modal| draw_confirmation_modal(frame, modal));
+    if let Some(modal) = app.confirmation_modal.as_ref() {
+        draw_confirmation_modal(frame, modal)
+    }
 }
 
-fn clone_or_empty(str: &Option<String>) -> String {
-    str.clone().unwrap_or("".to_string())
-}
-
-fn draw_confirmation_modal(frame: &mut Frame, modal: &ConfirmationModal) -> () {
+fn draw_confirmation_modal(frame: &mut Frame, modal: &ConfirmationModal) {
     let message = format!(
         "{}\n\n n to cancel | <c-a> to accept",
         modal.message.clone()
@@ -108,12 +118,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     .split(popup_layout[1])[1]
 }
 
-fn draw_tenants(
-    frame: &mut Frame,
-    layout: &LayoutChunks,
-    tenants: &Vec<Tenant>,
-    cursor: Option<usize>,
-) -> () {
+fn draw_tenants(frame: &mut Frame, layout: &LayoutChunks, tenants: &Tenants) {
     let tenants_help = vec![HelpItem::new("<enter>", "namespaces")];
     draw_help(frame, layout, tenants_help);
 
@@ -127,13 +132,14 @@ fn draw_tenants(
 
     let content_list = List::new(
         tenants
+            .tenants
             .iter()
             .map(|tenant| tenant.name.to_string()),
     )
     .block(content_block)
     .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
-    let mut state = ListState::default().with_selected(cursor);
+    let mut state = ListState::default().with_selected(tenants.cursor);
 
     frame.render_stateful_widget(content_list, layout.main, &mut state);
 }
@@ -142,9 +148,8 @@ fn draw_namespaces(
     frame: &mut Frame,
     layout: &LayoutChunks,
     tenant: String,
-    namespaces: &Vec<Namespace>,
-    cursor: Option<usize>,
-) -> () {
+    namespaces: &Namespaces,
+) {
     let help = vec![
         HelpItem::new("<esc>", "back"),
         HelpItem::new("<enter>", "topics"),
@@ -161,24 +166,19 @@ fn draw_namespaces(
 
     let content_list = List::new(
         namespaces
+            .namespaces
             .iter()
             .map(|namespace| namespace.name.to_string()),
     )
     .block(content_block)
     .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
-    let mut state = ListState::default().with_selected(cursor);
+    let mut state = ListState::default().with_selected(namespaces.cursor);
 
     frame.render_stateful_widget(content_list, layout.main, &mut state);
 }
 
-fn draw_topics(
-    frame: &mut Frame,
-    layout: &LayoutChunks,
-    namespace: String,
-    topics: &Vec<Topic>,
-    cursor: Option<usize>,
-) -> () {
+fn draw_topics(frame: &mut Frame, layout: &LayoutChunks, namespace: String, topics: &Topics) {
     let help = vec![
         HelpItem::new("<esc>", "back"),
         HelpItem::new("<enter>", "subs"),
@@ -194,11 +194,16 @@ fn draw_topics(
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
-    let content_list = List::new(topics.iter().map(|topic| topic.name.to_string()))
-        .block(content_block)
-        .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
+    let content_list = List::new(
+        topics
+            .topics
+            .iter()
+            .map(|topic| topic.name.to_string()),
+    )
+    .block(content_block)
+    .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
-    let mut state = ListState::default().with_selected(cursor);
+    let mut state = ListState::default().with_selected(topics.cursor);
 
     frame.render_stateful_widget(content_list, layout.main, &mut state);
 }
@@ -207,9 +212,8 @@ fn draw_subscriptions(
     frame: &mut Frame,
     layout: &LayoutChunks,
     topic: String,
-    subscriptions: &Vec<Subscription>,
-    cursor: Option<usize>,
-) -> () {
+    subscriptions: &Subscriptions,
+) {
     let help = vec![
         HelpItem::new("<esc>", "back"),
         HelpItem::new("<c-d>", "delete"),
@@ -234,7 +238,7 @@ fn draw_subscriptions(
     ];
 
     let table = Table::new(
-        subscriptions.iter().map(|sub| {
+        subscriptions.subscriptions.iter().map(|sub| {
             Row::new(vec![
                 Cell::new(sub.name.clone()),
                 Cell::new(sub.sub_type.clone()),
@@ -251,7 +255,7 @@ fn draw_subscriptions(
     .block(content_block)
     .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
-    let mut state = TableState::default().with_selected(cursor);
+    let mut state = TableState::default().with_selected(subscriptions.cursor);
 
     frame.render_stateful_widget(table, layout.main, &mut state);
 }
@@ -271,10 +275,9 @@ fn style_backlog_cell(backlog: i64) -> Cell<'static> {
 fn draw_listening(
     frame: &mut Frame,
     layout: &LayoutChunks,
-    messages: &Vec<SubMessage>,
-    side: &Side,
-    cursor: Option<usize>,
-) -> () {
+    listening: &Listening,
+    topic_name: String,
+) {
     let help = vec![
         HelpItem::new("<esc>", "back"),
         HelpItem::new("<tab>", "cycle side"),
@@ -296,17 +299,17 @@ fn draw_listening(
 
     let content_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if matches!(side, Side::Left { .. }) {
+        .border_type(if matches!(listening.selected_side, Side::Left { .. }) {
             BorderType::Double
         } else {
             BorderType::Plain
         })
-        .title("Subscriptions".to_string())
+        .title(format!("Messages of {topic_name}"))
         .title_alignment(Alignment::Center)
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
-    let content_list = List::new(messages.iter().map(|message| {
+    let content_list = List::new(listening.messages.iter().map(|message| {
         if message.body.len() > horizontal_space {
             format!("{}...", &message.body[..horizontal_space])
         } else {
@@ -316,20 +319,22 @@ fn draw_listening(
     .block(content_block)
     .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
-    let mut state = ListState::default().with_selected(cursor);
+    let mut state = ListState::default().with_selected(listening.cursor);
 
-    let message_body = cursor
-        .and_then(|cursor| messages.get(cursor))
+    let message_body = listening
+        .cursor
+        .and_then(|cursor| listening.messages.get(cursor))
         .and_then(|message| serde_json::from_str::<serde_json::Value>(&message.body).ok())
         .and_then(|body_as_json| serde_json::to_string_pretty(&body_as_json).ok());
 
-    let message_properties = cursor
-        .and_then(|cursor| messages.get(cursor))
+    let message_properties = listening
+        .cursor
+        .and_then(|cursor| listening.messages.get(cursor))
         .map(|message| message.properties.join("\n"));
 
     let preview_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if matches!(side, Side::Right { .. }) {
+        .border_type(if matches!(listening.selected_side, Side::Right { .. }) {
             BorderType::Double
         } else {
             BorderType::Plain
@@ -345,9 +350,9 @@ fn draw_listening(
             .map(|body| properties + "\n\n" + body)
     });
 
-    let scroll_offset = match side {
+    let scroll_offset = match listening.selected_side {
         Side::Left => (0, 0),
-        Side::Right { scroll_offset } => (scroll_offset.clone(), 0),
+        Side::Right { scroll_offset } => (scroll_offset, 0),
     };
 
     let preview_paragraph =
@@ -389,7 +394,7 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
                     help_rects: vec![header_chunks[0], header_chunks[1], header_chunks[2]],
                     logo: header_chunks[3],
                 },
-                message: Some(chunks[1].into()),
+                message: Some(chunks[1]),
                 main,
             }
         }
@@ -423,7 +428,7 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
     }
 }
 
-fn draw_logo(frame: &mut Frame, layout: &LayoutChunks) -> () {
+fn draw_logo(frame: &mut Frame, layout: &LayoutChunks) {
     let logo = Paragraph::new(
         r#"
   .-.    .-.    .-.    _     ____ __  __,
@@ -434,30 +439,29 @@ fn draw_logo(frame: &mut Frame, layout: &LayoutChunks) -> () {
 "#,
     )
     .alignment(Alignment::Right)
-    .style(Style::default().fg(Color::LightGreen));
+    .style(Style::default().fg(Color::Green));
 
     frame.render_widget(logo, layout.header.logo);
 }
 
-fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<HelpItem>) -> () {
+fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<HelpItem>) {
     let help_block = Block::default()
         .borders(Borders::NONE)
         .padding(Padding::new(1, 1, 1, 1));
 
     let lines: Vec<Line> = help_items
         .into_iter()
-        .map(|help| Line::from(help))
+        .map(Line::from)
         .collect();
 
     lines
         .chunks(5)
-        .into_iter()
         .map(|lines| Paragraph::new(Text::from(lines.to_vec())).block(help_block.clone()))
         .enumerate()
         .for_each(|(i, p)| frame.render_widget(p, layout.header.help_rects[i]));
 }
 
-fn draw_error(frame: &mut Frame, app: &App, layout: &LayoutChunks) -> () {
+fn draw_error(frame: &mut Frame, app: &App, layout: &LayoutChunks) {
     if let Some((error_to_show, rect_for_error)) = app.error_to_show.as_ref().zip(layout.message) {
         let block = Block::default()
             .borders(Borders::ALL)
