@@ -24,8 +24,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 use update::{
-    App, ConfirmedCommand, Listening, Namespace, Namespaces, PulsarApp, Resource, Resources, Side,
-    Subscriptions, Tenant, Tenants, Topics,
+    App, ConfirmedCommand, Consumers, Listening, Namespace, Namespaces, PulsarApp, Resource, Resources, Side, Subscriptions, Tenant, Tenants, Topics
 };
 
 use crossterm::{
@@ -125,6 +124,10 @@ async fn run(args: Args) -> anyhow::Result<()> {
             subscriptions: Subscriptions {
                 subscriptions: vec![],
                 cursor: None,
+            },
+            consumers: Consumers {
+                consumers: vec![],
+                cursor: None
             },
             listening: Listening {
                 messages: vec![],

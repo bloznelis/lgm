@@ -13,7 +13,8 @@ use ratatui::{
 };
 
 use crate::update::{
-    ConfirmationModal, Listening, Namespaces, Subscription, Subscriptions, Tenants, Topics,
+    ConfirmationModal, Consumers, Listening, Namespaces, Subscription, Subscriptions, Tenants,
+    Topics,
 };
 use crate::{App, Resource, Side};
 
@@ -64,6 +65,16 @@ pub fn draw_new(frame: &mut Frame, app: &App) {
                 .map(|tenant| tenant.name.clone())
                 .unwrap_or("".to_string()),
             &app.resources.subscriptions,
+        ),
+
+        Resource::Consumers => draw_consumers(
+            frame,
+            layout,
+            app.resources
+                .selected_subscription()
+                .map(|sub| sub.name.clone())
+                .unwrap_or("".to_string()),
+            &app.resources.consumers,
         ),
 
         Resource::Listening => draw_listening(
@@ -216,6 +227,7 @@ fn draw_subscriptions(
 ) {
     let help = vec![
         HelpItem::new("<esc>", "back"),
+        HelpItem::new("<enter>", "consumers"),
         HelpItem::new("<c-d>", "delete"),
         HelpItem::new("u", "seek 1h"),
         HelpItem::new("i", "seek 24h"),
@@ -232,9 +244,10 @@ fn draw_subscriptions(
         .padding(Padding::new(2, 2, 1, 1));
 
     let widths = [
-        Constraint::Ratio(1, 3),
-        Constraint::Ratio(1, 3),
-        Constraint::Ratio(1, 3),
+        Constraint::Ratio(1, 4),
+        Constraint::Ratio(1, 4),
+        Constraint::Ratio(1, 4),
+        Constraint::Ratio(1, 4),
     ];
 
     let table = Table::new(
@@ -242,6 +255,7 @@ fn draw_subscriptions(
             Row::new(vec![
                 Cell::new(sub.name.clone()),
                 Cell::new(sub.sub_type.clone()),
+                Cell::new(sub.consumer_count.to_string()),
                 style_backlog_cell(sub.backlog_size),
             ])
         }),
@@ -250,12 +264,63 @@ fn draw_subscriptions(
     .header(Row::new(vec![
         "name".to_string(),
         "type".to_string(),
+        "consumers".to_string(),
         "backlog".to_string(),
     ]))
     .block(content_block)
     .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
     let mut state = TableState::default().with_selected(subscriptions.cursor);
+
+    frame.render_stateful_widget(table, layout.main, &mut state);
+}
+
+fn draw_consumers(
+    frame: &mut Frame,
+    layout: &LayoutChunks,
+    subscription: String,
+    consumers: &Consumers,
+) {
+    let help = vec![HelpItem::new("<esc>", "back")];
+    draw_help(frame, layout, help);
+
+    let content_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .title(format!("Consumers of {subscription}"))
+        .title_alignment(Alignment::Center)
+        .title_style(Style::default().fg(Color::Green))
+        .padding(Padding::new(2, 2, 1, 1));
+
+    let widths = [
+        Constraint::Ratio(1, 3),
+        Constraint::Ratio(1, 3),
+        Constraint::Ratio(1, 3),
+    ];
+
+    let table = Table::new(
+        consumers
+            .consumers
+            .clone()
+            .into_iter()
+            .map(|consumer| {
+                Row::new(vec![
+                    Cell::new(consumer.name),
+                    Cell::new(consumer.connected_since),
+                    Cell::new(consumer.unacked_messages.to_string()),
+                ])
+            }),
+        widths,
+    )
+    .header(Row::new(vec![
+        "name".to_string(),
+        "connected since".to_string(),
+        "unacked messages".to_string(),
+    ]))
+    .block(content_block)
+    .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
+
+    let mut state = TableState::default().with_selected(consumers.cursor);
 
     frame.render_stateful_widget(table, layout.main, &mut state);
 }
@@ -449,10 +514,7 @@ fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<HelpItem>
         .borders(Borders::NONE)
         .padding(Padding::new(1, 1, 1, 1));
 
-    let lines: Vec<Line> = help_items
-        .into_iter()
-        .map(Line::from)
-        .collect();
+    let lines: Vec<Line> = help_items.into_iter().map(Line::from).collect();
 
     lines
         .chunks(5)
