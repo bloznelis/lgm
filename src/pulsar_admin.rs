@@ -1,3 +1,4 @@
+use crate::update::Consumer;
 use crate::update::Namespace;
 use crate::update::Subscription;
 use crate::update::Tenant;
@@ -13,6 +14,60 @@ use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_delete_subsc
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_get_stats;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_reset_cursor;
 use pulsar_admin_sdk::apis::tenants_api::tenants_base_get_tenants;
+
+pub async fn fetch_consumers(
+    tenant: &str,
+    namespace: &str,
+    topic: &str,
+    subscription: &str,
+    cfg: &Configuration,
+) -> anyhow::Result<Vec<Consumer>> {
+    let res = persistent_topics_get_stats(
+        cfg,
+        tenant,
+        namespace,
+        topic,
+        None,
+        None,
+        Some(true),
+        None,
+        None,
+        None,
+    );
+    let result = res
+        .await
+        .map_err(|err| {
+            anyhow!(
+                "Failed to fetch subscriptions (topic stats) {} {} {} {}",
+                tenant,
+                namespace,
+                topic,
+                err
+            )
+        })?
+        .subscriptions
+        .and_then(|subs| {
+            subs.get(subscription)
+                .and_then(|sub| sub.consumers.clone())
+                .map(|consumers| {
+                    consumers
+                        .into_iter()
+                        .map(|consumer_stats| Consumer {
+                            name: consumer_stats
+                                .consumer_name
+                                .unwrap_or("Unknown name".to_string()),
+                            connected_since: consumer_stats
+                                .connected_since
+                                .unwrap_or("Unknown".to_string()),
+                            unacked_messages: consumer_stats.unacked_messages.unwrap_or(-1),
+                        })
+                        .collect()
+                })
+        })
+        .unwrap_or(vec![]);
+
+    Ok(result)
+}
 
 pub async fn fetch_subs(
     tenant: &str,
@@ -53,6 +108,11 @@ pub async fn fetch_subs(
                         .clone()
                         .unwrap_or("no_type".to_string()),
                     backlog_size: value.msg_backlog.unwrap_or(0),
+                    consumer_count: value
+                        .consumers
+                        .clone()
+                        .map(|consumers| consumers.len())
+                        .unwrap_or(0),
                 })
                 .collect_vec()
         })

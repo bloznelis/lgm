@@ -46,6 +46,12 @@ pub struct Subscriptions {
 }
 
 #[derive(Clone)]
+pub struct Consumers {
+    pub consumers: Vec<Consumer>,
+    pub cursor: Option<usize>,
+}
+
+#[derive(Clone)]
 pub struct Listening {
     pub messages: Vec<SubMessage>,
     pub selected_side: Side,
@@ -58,6 +64,7 @@ pub enum Resource {
     Namespaces,
     Topics,
     Subscriptions,
+    Consumers,
     Listening,
 }
 
@@ -104,6 +111,14 @@ pub struct Subscription {
     pub name: String,
     pub sub_type: String,
     pub backlog_size: i64,
+    pub consumer_count: usize
+}
+
+#[derive(Clone, Debug)]
+pub struct Consumer {
+    pub name: String,
+    pub unacked_messages: i32,
+    pub connected_since: String,
 }
 
 #[derive(Clone, Debug)]
@@ -141,6 +156,7 @@ pub struct Resources {
     pub namespaces: Namespaces,
     pub topics: Topics,
     pub subscriptions: Subscriptions,
+    pub consumers: Consumers,
     pub listening: Listening,
 }
 
@@ -150,10 +166,12 @@ impl Resources {
             Resource::Tenants => {
                 self.tenants.cursor = cursor_up(self.tenants.cursor, self.tenants.tenants.len())
             }
+
             Resource::Namespaces => {
                 self.namespaces.cursor =
                     cursor_up(self.namespaces.cursor, self.namespaces.namespaces.len())
             }
+
             Resource::Topics => {
                 self.topics.cursor = cursor_up(self.topics.cursor, self.topics.topics.len())
             }
@@ -164,6 +182,12 @@ impl Resources {
                     self.subscriptions.subscriptions.len(),
                 )
             }
+
+            Resource::Consumers => {
+                self.consumers.cursor =
+                    cursor_up(self.consumers.cursor, self.consumers.consumers.len())
+            }
+
             Resource::Listening => {
                 self.listening.cursor =
                     cursor_up(self.listening.cursor, self.listening.messages.len())
@@ -190,6 +214,12 @@ impl Resources {
                     self.subscriptions.subscriptions.len(),
                 )
             }
+
+            Resource::Consumers => {
+                self.consumers.cursor =
+                    cursor_down(self.consumers.cursor, self.consumers.consumers.len())
+            }
+
             Resource::Listening => {
                 self.listening.cursor =
                     cursor_down(self.listening.cursor, self.listening.messages.len())
@@ -606,82 +636,94 @@ pub async fn update<'a>(
                                 }
                             }
                             Resource::Topics => {
-                                if let Some(selected_tenant) = &app.resources.selected_tenant() {
-                                    let namespaces = pulsar_admin::fetch_namespaces(
-                                        &selected_tenant.name,
-                                        &app.pulsar_admin_cfg,
-                                    )
-                                    .await;
+                                let namespaces = pulsar_admin::fetch_namespaces(
+                                    &app.resources.selected_tenant().unwrap().name,
+                                    &app.pulsar_admin_cfg,
+                                )
+                                .await;
 
-                                    match namespaces {
-                                        Ok(namespaces) => {
-                                            app.resources.namespaces.namespaces = namespaces;
-                                            app.active_resource = Resource::Namespaces;
-                                        }
-                                        Err(err) => {
-                                            app.error_to_show = Some(ErrorToShow::new(format!(
-                                                "Failed to fetch namespaces :[\n {:?}",
-                                                err
-                                            )));
-                                        }
+                                match namespaces {
+                                    Ok(namespaces) => {
+                                        app.resources.namespaces.namespaces = namespaces;
+                                        app.active_resource = Resource::Namespaces;
+                                    }
+                                    Err(err) => {
+                                        app.error_to_show = Some(ErrorToShow::new(format!(
+                                            "Failed to fetch namespaces :[\n {:?}",
+                                            err
+                                        )));
                                     }
                                 }
                             }
 
                             Resource::Subscriptions => {
-                                if let Some(selected_namespace) =
-                                    &app.resources.selected_namespace()
-                                {
-                                    let topics = pulsar_admin::fetch_topics(
-                                        &app.resources.selected_tenant().unwrap().name,
-                                        &selected_namespace.name,
-                                        &app.pulsar_admin_cfg,
-                                    )
-                                    .await;
+                                let topics = pulsar_admin::fetch_topics(
+                                    &app.resources.selected_tenant().unwrap().name,
+                                    &app.resources.selected_namespace().unwrap().name,
+                                    &app.pulsar_admin_cfg,
+                                )
+                                .await;
 
-                                    match topics {
-                                        Ok(topics) => {
-                                            app.resources.topics.topics = topics;
-                                            app.active_resource = Resource::Topics;
-                                        }
-                                        Err(err) => {
-                                            app.error_to_show = Some(ErrorToShow::new(format!(
-                                                "Failed to fetch topics :[\n {:?}",
-                                                err
-                                            )));
-                                        }
+                                match topics {
+                                    Ok(topics) => {
+                                        app.resources.topics.topics = topics;
+                                        app.active_resource = Resource::Topics;
+                                    }
+                                    Err(err) => {
+                                        app.error_to_show = Some(ErrorToShow::new(format!(
+                                            "Failed to fetch topics :[\n {:?}",
+                                            err
+                                        )));
                                     }
                                 }
                             }
+
+                            Resource::Consumers => {
+                                let subscriptions = pulsar_admin::fetch_subs(
+                                    &app.resources.selected_tenant().unwrap().name,
+                                    &app.resources.selected_namespace().unwrap().name,
+                                    &app.resources.selected_topic().unwrap().name,
+                                    &app.pulsar_admin_cfg,
+                                )
+                                .await;
+
+                                match subscriptions {
+                                    Ok(subscriptions) => {
+                                        app.resources.subscriptions.subscriptions = subscriptions;
+                                        app.active_resource = Resource::Subscriptions;
+                                    }
+                                    Err(err) => {
+                                        app.error_to_show = Some(ErrorToShow::new(format!(
+                                            "Failed to fetch subscriptions :[\n {:?}",
+                                            err
+                                        )));
+                                    }
+                                }
+                            }
+
                             Resource::Listening => {
-                                if let Some(selected_namespace) =
-                                    &app.resources.selected_namespace()
-                                {
-                                    let topics = pulsar_admin::fetch_topics(
-                                        &app.resources.selected_tenant().unwrap().name,
-                                        &selected_namespace.name,
-                                        &app.pulsar_admin_cfg,
-                                    )
-                                    .await;
+                                let topics = pulsar_admin::fetch_topics(
+                                    &app.resources.selected_tenant().unwrap().name,
+                                    &app.resources.selected_namespace().unwrap().name,
+                                    &app.pulsar_admin_cfg,
+                                )
+                                .await;
 
-                                    match topics {
-                                        Ok(topics) => {
-                                            app.resources.topics.topics = topics;
-                                            app.active_resource = Resource::Topics;
+                                match topics {
+                                    Ok(topics) => {
+                                        app.resources.topics.topics = topics;
+                                        app.active_resource = Resource::Topics;
 
-                                            if let Some(sender) =
-                                                app.pulsar.active_sub_handle.take()
-                                            {
-                                                sender.send(()).map_err(|()| { anyhow!( "Failed to send termination singal to subscription")
+                                        if let Some(sender) = app.pulsar.active_sub_handle.take() {
+                                            sender.send(()).map_err(|()| { anyhow!( "Failed to send termination singal to subscription")
                                                 })?
-                                            };
-                                        }
-                                        Err(err) => {
-                                            app.error_to_show = Some(ErrorToShow::new(format!(
-                                                "Failed to fetch topics :[\n {:?}",
-                                                err
-                                            )));
-                                        }
+                                        };
+                                    }
+                                    Err(err) => {
+                                        app.error_to_show = Some(ErrorToShow::new(format!(
+                                            "Failed to fetch topics :[\n {:?}",
+                                            err
+                                        )));
                                     }
                                 }
                             }
@@ -755,10 +797,14 @@ pub async fn update<'a>(
                             }
                         }
                         Resource::Topics => {
-                            if let Some(topic) = &app.resources.selected_topic() {
+                            if let Some(topic) = app.resources.selected_topic() {
                                 let subscriptions = pulsar_admin::fetch_subs(
-                                    &app.resources.selected_tenant().unwrap().name,
-                                    &app.resources.selected_namespace().unwrap().name,
+                                    app.resources
+                                        .selected_tenant_name()
+                                        .expect("tenant must be set"),
+                                    app.resources
+                                        .selected_namespace_name()
+                                        .expect("namespace must be set"),
                                     &topic.name,
                                     &app.pulsar_admin_cfg,
                                 )
@@ -782,7 +828,42 @@ pub async fn update<'a>(
                                 }
                             }
                         }
-                        Resource::Subscriptions { .. } => {}
+                        Resource::Subscriptions { .. } => {
+                            if let Some(subscription) = app.resources.selected_subscription() {
+                                let consumers = pulsar_admin::fetch_consumers(
+                                    app.resources
+                                        .selected_tenant_name()
+                                        .expect("tenant must be set"),
+                                    app.resources
+                                        .selected_namespace_name()
+                                        .expect("namespace must be set"),
+                                    app.resources
+                                        .selected_topic_name()
+                                        .expect("namespace must be set"),
+                                    subscription.name.as_ref(),
+                                    &app.pulsar_admin_cfg,
+                                )
+                                .await;
+
+                                match consumers {
+                                    Ok(consumers) => {
+                                        app.resources.consumers.cursor = get_new_cursor(
+                                            &consumers,
+                                            app.resources.consumers.cursor,
+                                        );
+                                        app.resources.consumers.consumers = consumers;
+                                        app.active_resource = Resource::Consumers;
+                                    }
+                                    Err(err) => {
+                                        app.error_to_show = Some(ErrorToShow::new(format!(
+                                            "Failed to fetch consumers :[\n {:?}",
+                                            err
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                        Resource::Consumers => {}
                         Resource::Listening => {}
                     }
                 }
