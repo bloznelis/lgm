@@ -109,7 +109,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
             active_sub_handle: None,
         },
         confirmation_modal: None,
-        error_to_show: None,
+        info_to_show: None,
         active_resource: Resource::Namespaces,
         resources: Resources {
             tenants: Tenants {

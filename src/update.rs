@@ -80,13 +80,18 @@ pub enum Side {
     Right { scroll_offset: u16 },
 }
 
-pub struct ErrorToShow {
+pub struct InfoToShow {
     pub message: String,
+    pub is_error: bool,
 }
 
-impl ErrorToShow {
-    fn new(message: String) -> Self {
-        ErrorToShow { message }
+impl InfoToShow {
+    fn error(message: String) -> Self {
+        InfoToShow { message, is_error: true }
+    }
+
+    fn info(message: String) -> Self {
+        InfoToShow { message, is_error: false }
     }
 }
 
@@ -111,7 +116,7 @@ pub struct Subscription {
     pub name: String,
     pub sub_type: String,
     pub backlog_size: i64,
-    pub consumer_count: usize
+    pub consumer_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -133,6 +138,7 @@ pub struct ConfirmationModal {
 }
 
 pub enum ConfirmedCommand {
+    CloseInfoMessage,
     DeleteSubscription {
         tenant: String,
         namespace: String,
@@ -307,7 +313,7 @@ fn cursor_down(current: Option<usize>, col_size: usize) -> Option<usize> {
 
 pub struct App {
     pub pulsar: PulsarApp,
-    pub error_to_show: Option<ErrorToShow>,
+    pub info_to_show: Option<InfoToShow>,
     pub confirmation_modal: Option<ConfirmationModal>,
     pub active_resource: Resource,
     pub resources: Resources,
@@ -333,8 +339,8 @@ pub async fn update<'a>(
             .receiver
             .recv_timeout(Duration::from_millis(100))
         {
-            app.error_to_show = None;
             match event {
+                AppEvent::Command(ConfirmedCommand::CloseInfoMessage) => app.info_to_show = None,
                 AppEvent::Command(ConfirmedCommand::SeekSubscription {
                     tenant,
                     namespace,
@@ -350,7 +356,7 @@ pub async fn update<'a>(
                     app.confirmation_modal = None;
 
                     if let Err(err) = result {
-                        app.error_to_show = Some(ErrorToShow::new(err.to_string()))
+                        app.info_to_show = Some(InfoToShow::error(err.to_string()))
                     }
 
                     //TODO: this is getting duplicated, move out to refresh_subscriptions function
@@ -372,12 +378,11 @@ pub async fn update<'a>(
                         Ok(subscriptions) => {
                             app.resources.subscriptions.subscriptions = subscriptions;
                             app.active_resource = Resource::Subscriptions;
+
+                            show_info_msg(app, "Seeked succesffully.");
                         }
                         Err(err) => {
-                            app.error_to_show = Some(ErrorToShow::new(format!(
-                                "Failed to fetch subscriptions :[\n {:?}",
-                                err
-                            )));
+                            show_error_msg(app, format!( "Failed to fetch subscriptions :[ {:?}", err));
                         }
                     }
                 }
@@ -416,20 +421,16 @@ pub async fn update<'a>(
                                         app.resources.subscriptions.cursor = None;
                                     };
                                     app.active_resource = Resource::Subscriptions;
+
+                                    show_info_msg(app, "Subscription deleted.");
                                 }
                                 Err(err) => {
-                                    app.error_to_show = Some(ErrorToShow::new(format!(
-                                        "Failed to fetch subscriptions :[\n {:?}",
-                                        err
-                                    )));
+                                    show_error_msg(app, format!( "Failed to fetch subscriptions :[ {:?}", err));
                                 }
                             }
                         }
                         Err(err) => {
-                            app.error_to_show = Some(ErrorToShow::new(format!(
-                                "Failed to delete subscription :[\n {:?}",
-                                err
-                            )));
+                            show_error_msg(app, format!( "Failed to delete subscription :[ {:?}", err));
                         }
                     }
 
@@ -504,7 +505,9 @@ pub async fn update<'a>(
                         .await;
 
                         if let Err(err) = result {
-                            app.error_to_show = Some(ErrorToShow::new(err.to_string()))
+                            show_error_msg(app, err.to_string());
+                        } else {
+                            show_info_msg(app, "Seeked succesffully.");
                         }
                     };
                     if let Resource::Subscriptions = &app.active_resource {
@@ -566,6 +569,8 @@ pub async fn update<'a>(
                             //TODO: Create this once and pass it around
                             let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
                             ctx.set_contents(content.to_string()).unwrap();
+
+                            show_info_msg(app, "Message copied to clipboard.");
                         }
                     }
                 }
@@ -628,10 +633,7 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Tenants;
                                     }
                                     Err(err) => {
-                                        app.error_to_show = Some(ErrorToShow::new(format!(
-                                            "Failed to fetch tenants :[\n {:?}",
-                                            err
-                                        )));
+                                        show_error_msg(app, format!( "Failed to fetch tenants :[ {:?}", err));
                                     }
                                 }
                             }
@@ -648,10 +650,7 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Namespaces;
                                     }
                                     Err(err) => {
-                                        app.error_to_show = Some(ErrorToShow::new(format!(
-                                            "Failed to fetch namespaces :[\n {:?}",
-                                            err
-                                        )));
+                                        show_error_msg(app, format!( "Failed to fetch namespaces :[ {:?}", err));
                                     }
                                 }
                             }
@@ -670,10 +669,7 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Topics;
                                     }
                                     Err(err) => {
-                                        app.error_to_show = Some(ErrorToShow::new(format!(
-                                            "Failed to fetch topics :[\n {:?}",
-                                            err
-                                        )));
+                                        show_error_msg(app, format!( "Failed to fetch topics :[ {:?}", err));
                                     }
                                 }
                             }
@@ -693,10 +689,7 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Subscriptions;
                                     }
                                     Err(err) => {
-                                        app.error_to_show = Some(ErrorToShow::new(format!(
-                                            "Failed to fetch subscriptions :[\n {:?}",
-                                            err
-                                        )));
+                                        show_error_msg(app, format!( "Failed to fetch subscriptions :[ {:?}", err));
                                     }
                                 }
                             }
@@ -720,10 +713,7 @@ pub async fn update<'a>(
                                         };
                                     }
                                     Err(err) => {
-                                        app.error_to_show = Some(ErrorToShow::new(format!(
-                                            "Failed to fetch topics :[\n {:?}",
-                                            err
-                                        )));
+                                        show_error_msg(app, format!( "Failed to fetch topics :[ {:?}", err));
                                     }
                                 }
                             }
@@ -763,10 +753,7 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Namespaces;
                                     }
                                     Err(err) => {
-                                        app.error_to_show = Some(ErrorToShow::new(format!(
-                                            "Failed to fetch namespaces :[\n {:?}",
-                                            err
-                                        )));
+                                        show_error_msg(app, format!( "Failed to fetch namespaces :[ {:?}", err));
                                     }
                                 }
                             }
@@ -788,10 +775,7 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Topics;
                                     }
                                     Err(err) => {
-                                        app.error_to_show = Some(ErrorToShow::new(format!(
-                                            "Failed to fetch topics :[\n {:?}",
-                                            err
-                                        )));
+                                        show_error_msg(app, format!( "Failed to fetch topics :[ {:?}", err));
                                     }
                                 }
                             }
@@ -820,10 +804,7 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Subscriptions;
                                     }
                                     Err(err) => {
-                                        app.error_to_show = Some(ErrorToShow::new(format!(
-                                            "Failed to fetch subscriptions :[\n {:?}",
-                                            err
-                                        )));
+                                        show_error_msg(app, format!( "Failed to fetch subscriptions :[ {:?}", err));
                                     }
                                 }
                             }
@@ -855,10 +836,7 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Consumers;
                                     }
                                     Err(err) => {
-                                        app.error_to_show = Some(ErrorToShow::new(format!(
-                                            "Failed to fetch consumers :[\n {:?}",
-                                            err
-                                        )));
+                                        show_error_msg(app, format!( "Failed to fetch consumers :[ {:?}", err));
                                     }
                                 }
                             }
@@ -889,4 +867,24 @@ fn get_new_cursor<A>(col: &[A], old_cursor: Option<usize>) -> Option<usize> {
             None => Some(0),
         }
     }
+}
+
+fn show_info_msg(app: &mut App, msg: &str) {
+    app.info_to_show = Some(InfoToShow::info(msg.to_string()));
+
+    let sender = app.pulsar.sender.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        sender.send(AppEvent::Command(ConfirmedCommand::CloseInfoMessage))
+    });
+}
+
+fn show_error_msg(app: &mut App, msg: String) {
+    app.info_to_show = Some(InfoToShow::error(msg.to_string()));
+
+    let sender = app.pulsar.sender.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        sender.send(AppEvent::Command(ConfirmedCommand::CloseInfoMessage))
+    });
 }

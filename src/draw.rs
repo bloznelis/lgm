@@ -32,7 +32,7 @@ struct LayoutChunks {
 pub fn draw_new(frame: &mut Frame, app: &App) {
     let layout = &make_layout(frame, app);
     draw_logo(frame, layout);
-    draw_error(frame, app, layout);
+    draw_info(frame, app, layout);
 
     match &app.active_resource {
         Resource::Tenants => draw_tenants(frame, layout, &app.resources.tenants),
@@ -431,14 +431,14 @@ fn draw_listening(
 }
 
 fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
-    match app.error_to_show {
+    match app.info_to_show {
         Some(_) => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(7),
-                    Constraint::Length(4),
                     Constraint::Percentage(100),
+                    Constraint::Length(1),
                 ])
                 .split(frame.size());
 
@@ -452,15 +452,13 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
                 ])
                 .split(chunks[0]);
 
-            let main = chunks[2];
-
             LayoutChunks {
                 header: HeaderLayout {
                     help_rects: vec![header_chunks[0], header_chunks[1], header_chunks[2]],
                     logo: header_chunks[3],
                 },
-                message: Some(chunks[1]),
-                main,
+                message: Some(chunks[2]),
+                main: chunks[1],
             }
         }
         None => {
@@ -523,17 +521,21 @@ fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<HelpItem>
         .for_each(|(i, p)| frame.render_widget(p, layout.header.help_rects[i]));
 }
 
-fn draw_error(frame: &mut Frame, app: &App, layout: &LayoutChunks) {
-    if let Some((error_to_show, rect_for_error)) = app.error_to_show.as_ref().zip(layout.message) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Thick);
-        let error_message_paragraph = Paragraph::new(error_to_show.message.clone())
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::Red))
+fn draw_info(frame: &mut Frame, app: &App, layout: &LayoutChunks) {
+    if let Some((info, rect)) = app.info_to_show.as_ref().zip(layout.message) {
+        let block = Block::default().borders(Borders::NONE).padding(Padding::horizontal(1));
+        let color = if info.is_error {
+            Color::Red
+        } else {
+            Color::Green
+        };
+
+        let paragraph = Paragraph::new(info.message.clone())
+            .alignment(Alignment::Left)
+            .style(Style::default().fg(color))
             .block(block);
 
-        frame.render_widget(error_message_paragraph, rect_for_error)
+        frame.render_widget(paragraph, rect)
     }
 }
 
