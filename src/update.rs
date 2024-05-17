@@ -379,7 +379,7 @@ pub async fn update<'a>(
                             app.resources.subscriptions.subscriptions = subscriptions;
                             app.active_resource = Resource::Subscriptions;
 
-                            show_info_msg(app, "Seeked succesffully.");
+                            show_info_msg(app, "Seeked successfully.");
                         }
                         Err(err) => {
                             show_error_msg(app, format!( "Failed to fetch subscriptions :[ {:?}", err));
@@ -507,7 +507,7 @@ pub async fn update<'a>(
                         if let Err(err) = result {
                             show_error_msg(app, err.to_string());
                         } else {
-                            show_info_msg(app, "Seeked succesffully.");
+                            show_info_msg(app, "Seeked successfully.");
                         }
                     };
                     if let Resource::Subscriptions = &app.active_resource {
