@@ -82,5 +82,5 @@ pub async fn listen_to_topic(
 
     consumer.close().await?;
 
-    Ok({})
+    Ok(())
 }

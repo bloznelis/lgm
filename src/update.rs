@@ -21,36 +21,44 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use crate::auth::Token;
 use crate::{draw, pulsar_listener, AppEvent, ControlEvent};
 
-#[derive(Debug, Clone)]
-pub enum Resource {
-    Tenants {
-        tenants: Vec<Tenant>,
-    },
-    Namespaces {
-        namespaces: Vec<Namespace>,
-    },
-    Topics {
-        topics: Vec<Topic>,
-    },
-    Subscriptions {
-        subscriptions: Vec<Subscription>,
-    },
-    Listening {
-        messages: Vec<SubMessage>,
-        selected_side: Side,
-    },
+#[derive(Clone)]
+pub struct Tenants {
+    pub tenants: Vec<Tenant>,
+    pub cursor: Option<usize>,
 }
 
-impl Resource {
-    pub fn list_element_count(&self) -> usize {
-        match self {
-            Resource::Tenants { tenants } => tenants.len(),
-            Resource::Namespaces { namespaces } => namespaces.len(),
-            Resource::Topics { topics } => topics.len(),
-            Resource::Subscriptions { subscriptions } => subscriptions.len(),
-            Resource::Listening { messages, .. } => messages.len(),
-        }
-    }
+#[derive(Clone)]
+pub struct Namespaces {
+    pub namespaces: Vec<Namespace>,
+    pub cursor: Option<usize>,
+}
+
+#[derive(Clone)]
+pub struct Topics {
+    pub topics: Vec<Topic>,
+    pub cursor: Option<usize>,
+}
+
+#[derive(Clone)]
+pub struct Subscriptions {
+    pub subscriptions: Vec<Subscription>,
+    pub cursor: Option<usize>,
+}
+
+#[derive(Clone)]
+pub struct Listening {
+    pub messages: Vec<SubMessage>,
+    pub selected_side: Side,
+    pub cursor: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Resource {
+    Tenants,
+    Namespaces,
+    Topics,
+    Subscriptions,
+    Listening,
 }
 
 impl std::fmt::Display for Resource {
@@ -127,16 +135,152 @@ pub enum ConfirmedCommand {
     },
 }
 
+#[derive(Clone)]
+pub struct Resources {
+    pub tenants: Tenants,
+    pub namespaces: Namespaces,
+    pub topics: Topics,
+    pub subscriptions: Subscriptions,
+    pub listening: Listening,
+}
+
+impl Resources {
+    fn cursor_up(&mut self, active_resource: &Resource) {
+        match active_resource {
+            Resource::Tenants => {
+                self.tenants.cursor = cursor_up(self.tenants.cursor, self.tenants.tenants.len())
+            }
+            Resource::Namespaces => {
+                self.namespaces.cursor =
+                    cursor_up(self.namespaces.cursor, self.namespaces.namespaces.len())
+            }
+            Resource::Topics => {
+                self.topics.cursor = cursor_up(self.topics.cursor, self.topics.topics.len())
+            }
+
+            Resource::Subscriptions => {
+                self.subscriptions.cursor = cursor_up(
+                    self.subscriptions.cursor,
+                    self.subscriptions.subscriptions.len(),
+                )
+            }
+            Resource::Listening => {
+                self.listening.cursor =
+                    cursor_up(self.listening.cursor, self.listening.messages.len())
+            }
+        }
+    }
+
+    fn cursor_down(&mut self, active_resource: &Resource) {
+        match active_resource {
+            Resource::Tenants => {
+                self.tenants.cursor = cursor_down(self.tenants.cursor, self.tenants.tenants.len())
+            }
+            Resource::Namespaces => {
+                self.namespaces.cursor =
+                    cursor_down(self.namespaces.cursor, self.namespaces.namespaces.len())
+            }
+            Resource::Topics => {
+                self.topics.cursor = cursor_down(self.topics.cursor, self.topics.topics.len())
+            }
+
+            Resource::Subscriptions => {
+                self.subscriptions.cursor = cursor_down(
+                    self.subscriptions.cursor,
+                    self.subscriptions.subscriptions.len(),
+                )
+            }
+            Resource::Listening => {
+                self.listening.cursor =
+                    cursor_down(self.listening.cursor, self.listening.messages.len())
+            }
+        }
+    }
+
+    pub fn selected_tenant(&self) -> Option<&Tenant> {
+        self.tenants
+            .cursor
+            .and_then(|cursor| self.tenants.tenants.get(cursor))
+    }
+
+    pub fn selected_tenant_name(&self) -> Option<&str> {
+        self.selected_tenant()
+            .map(|tenant| tenant.name.as_ref())
+    }
+
+    pub fn selected_namespace(&self) -> Option<&Namespace> {
+        self.namespaces
+            .cursor
+            .and_then(|cursor| self.namespaces.namespaces.get(cursor))
+    }
+
+    pub fn selected_namespace_name(&self) -> Option<&str> {
+        self.selected_namespace()
+            .map(|ns| ns.name.as_ref())
+    }
+
+    pub fn selected_topic(&self) -> Option<&Topic> {
+        self.topics
+            .cursor
+            .and_then(|cursor| self.topics.topics.get(cursor))
+    }
+
+    pub fn selected_topic_name(&self) -> Option<&str> {
+        self.selected_topic()
+            .map(|topic| topic.name.as_ref())
+    }
+
+    pub fn selected_subscription(&self) -> Option<&Subscription> {
+        self.subscriptions
+            .cursor
+            .and_then(|cursor| self.subscriptions.subscriptions.get(cursor))
+    }
+    pub fn selected_message(&self) -> Option<&SubMessage> {
+        self.listening
+            .cursor
+            .and_then(|cursor| self.listening.messages.get(cursor))
+    }
+}
+
+pub fn selected_topic(resources: &Resources) -> Option<Topic> {
+    resources
+        .topics
+        .cursor
+        .and_then(|cursor| resources.topics.topics.get(cursor).cloned())
+}
+
+fn cursor_up(current: Option<usize>, col_size: usize) -> Option<usize> {
+    match current {
+        Some(cursor) => {
+            if cursor == 0 {
+                Some(col_size.saturating_sub(1))
+            } else {
+                Some(cursor - 1)
+            }
+        }
+        None => Some(0),
+    }
+}
+
+fn cursor_down(current: Option<usize>, col_size: usize) -> Option<usize> {
+    match current {
+        Some(cursor) => {
+            if cursor == col_size.saturating_sub(1) {
+                Some(0)
+            } else {
+                Some(cursor + 1)
+            }
+        }
+        None => Some(0),
+    }
+}
+
 pub struct App {
     pub pulsar: PulsarApp,
     pub error_to_show: Option<ErrorToShow>,
     pub confirmation_modal: Option<ConfirmationModal>,
     pub active_resource: Resource,
-    pub content_cursor: Option<usize>,
-    pub last_cursor: Option<usize>,
-    pub last_tenant: Option<String>,
-    pub last_namespace: Option<String>,
-    pub last_topic: Option<String>,
+    pub resources: Resources,
     pub pulsar_admin_cfg: Configuration,
 }
 
@@ -148,12 +292,12 @@ pub struct PulsarApp {
     pub active_sub_handle: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
-pub async fn update(
+pub async fn update<'a>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,
 ) -> anyhow::Result<()> {
     loop {
-        terminal.draw(|f| draw::draw_new(f, &app))?;
+        terminal.draw(|f| draw::draw_new(f, app))?;
         if let Ok(event) = app
             .pulsar
             .receiver
@@ -175,30 +319,29 @@ pub async fn update(
                     .await;
                     app.confirmation_modal = None;
 
-                    match result {
-                        Err(err) => app.error_to_show = Some(ErrorToShow::new(err.to_string())),
-                        Ok(_) => (),
+                    if let Err(err) = result {
+                        app.error_to_show = Some(ErrorToShow::new(err.to_string()))
                     }
 
                     //TODO: this is getting duplicated, move out to refresh_subscriptions function
                     let subscriptions = pulsar_admin::fetch_subs(
-                        &app.last_tenant.clone().unwrap(),
-                        app.last_namespace.as_ref().unwrap(),
-                        &app.last_topic.as_ref().unwrap(),
+                        app.resources
+                            .selected_tenant_name()
+                            .expect("tenant must be set"),
+                        app.resources
+                            .selected_namespace_name()
+                            .expect("namespace must be set"),
+                        app.resources
+                            .selected_topic_name()
+                            .expect("namespace must be set"),
                         &app.pulsar_admin_cfg,
                     )
                     .await;
 
                     match subscriptions {
                         Ok(subscriptions) => {
-                            app.last_cursor = app.content_cursor;
-                            if !subscriptions.is_empty() {
-                                app.content_cursor = Some(0);
-                            } else {
-                                app.content_cursor = None;
-                            };
-                            app.active_resource = Resource::Subscriptions { subscriptions };
-                            app.last_topic = Some(topic.to_string())
+                            app.resources.subscriptions.subscriptions = subscriptions;
+                            app.active_resource = Resource::Subscriptions;
                         }
                         Err(err) => {
                             app.error_to_show = Some(ErrorToShow::new(format!(
@@ -215,36 +358,52 @@ pub async fn update(
                     sub_name,
                     cfg,
                 }) => {
-                    pulsar_admin::delete_subscription(&tenant, &namespace, &topic, &sub_name, &cfg)
-                        .await?;
-                    app.confirmation_modal = None;
-
-                    let subscriptions = pulsar_admin::fetch_subs(
-                        &app.last_tenant.clone().unwrap(),
-                        app.last_namespace.as_ref().unwrap(),
-                        &app.last_topic.as_ref().unwrap(),
-                        &app.pulsar_admin_cfg,
+                    match pulsar_admin::delete_subscription(
+                        &tenant, &namespace, &topic, &sub_name, &cfg,
                     )
-                    .await;
+                    .await
+                    {
+                        Ok(_) => {
+                            let subscriptions = pulsar_admin::fetch_subs(
+                                app.resources
+                                    .selected_tenant_name()
+                                    .expect("tenant must be set"),
+                                app.resources
+                                    .selected_namespace_name()
+                                    .expect("namespace must be set"),
+                                app.resources
+                                    .selected_topic_name()
+                                    .expect("namespace must be set"),
+                                &app.pulsar_admin_cfg,
+                            )
+                            .await;
 
-                    match subscriptions {
-                        Ok(subscriptions) => {
-                            app.last_cursor = app.content_cursor;
-                            if !subscriptions.is_empty() {
-                                app.content_cursor = Some(0);
-                            } else {
-                                app.content_cursor = None;
-                            };
-                            app.active_resource = Resource::Subscriptions { subscriptions };
-                            app.last_topic = Some(topic.to_string())
+                            match subscriptions {
+                                Ok(subscriptions) => {
+                                    if !subscriptions.is_empty() {
+                                        app.resources.subscriptions.cursor = Some(0);
+                                    } else {
+                                        app.resources.subscriptions.cursor = None;
+                                    };
+                                    app.active_resource = Resource::Subscriptions;
+                                }
+                                Err(err) => {
+                                    app.error_to_show = Some(ErrorToShow::new(format!(
+                                        "Failed to fetch subscriptions :[\n {:?}",
+                                        err
+                                    )));
+                                }
+                            }
                         }
                         Err(err) => {
                             app.error_to_show = Some(ErrorToShow::new(format!(
-                                "Failed to fetch subscriptions :[\n {:?}",
+                                "Failed to delete subscription :[\n {:?}",
                                 err
                             )));
                         }
                     }
+
+                    app.confirmation_modal = None;
                 }
                 AppEvent::Control(ControlEvent::Accept) => {
                     if let Some(confirmation) = app.confirmation_modal.take() {
@@ -257,29 +416,27 @@ pub async fn update(
                     app.confirmation_modal = None;
                 }
                 AppEvent::Control(ControlEvent::Delete) => {
-                    if let Resource::Subscriptions { subscriptions } = &mut app.active_resource {
-                        if let Some(cursor) = app.content_cursor {
-                            let subscription = &subscriptions[cursor].name;
-
+                    if let Resource::Subscriptions = &mut app.active_resource {
+                        if let Some(subscription) = app.resources.selected_subscription() {
                             app.confirmation_modal = Some(ConfirmationModal {
-                                message: format!("Delete '{}' subscription?", subscription),
+                                message: format!("Delete '{}' subscription?", subscription.name),
                                 command: ConfirmedCommand::DeleteSubscription {
                                     tenant: app
-                                        .last_tenant
-                                        .as_ref()
-                                        .expect("Tenant must be set")
-                                        .clone(),
+                                        .resources
+                                        .selected_tenant_name()
+                                        .expect("tenant must be set")
+                                        .to_string(),
                                     namespace: app
-                                        .last_namespace
-                                        .as_ref()
-                                        .expect("Namespace must be set")
-                                        .clone(),
+                                        .resources
+                                        .selected_namespace_name()
+                                        .expect("namespace must be set")
+                                        .to_string(),
                                     topic: app
-                                        .last_topic
-                                        .as_ref()
-                                        .expect("Topic must be set")
-                                        .clone(),
-                                    sub_name: subscription.clone(),
+                                        .resources
+                                        .selected_topic_name()
+                                        .expect("namespace must be set")
+                                        .to_string(),
+                                    sub_name: subscription.name.clone(),
                                     cfg: app.pulsar_admin_cfg.clone(),
                                 },
                             })
@@ -287,7 +444,7 @@ pub async fn update(
                     }
                 }
                 AppEvent::Control(ControlEvent::ResetSubscription(length)) => {
-                    if let Resource::Listening { .. } = &app.active_resource {
+                    if let Resource::Listening = &app.active_resource {
                         let length = match length {
                             crate::ResetLength::OneHour => {
                                 TimeDelta::try_hours(1).expect("Expecting hours")
@@ -301,30 +458,27 @@ pub async fn update(
                         };
 
                         let result = pulsar_admin::reset_subscription(
-                            &app.last_tenant
-                                .as_ref()
-                                .expect("Tenant must be set"),
-                            &app.last_namespace
-                                .as_ref()
-                                .expect("Namespace must be set"),
-                            &app.last_topic
-                                .as_ref()
-                                .expect("Topic must be set"),
+                            app.resources
+                                .selected_tenant_name()
+                                .expect("tenant must be set"),
+                            app.resources
+                                .selected_namespace_name()
+                                .expect("namespace must be set"),
+                            app.resources
+                                .selected_topic_name()
+                                .expect("namespace must be set"),
                             "lgm_subscription",
                             &app.pulsar_admin_cfg,
                             length,
                         )
                         .await;
 
-                        match result {
-                            Err(err) => app.error_to_show = Some(ErrorToShow::new(err.to_string())),
-                            Ok(_) => (),
+                        if let Err(err) = result {
+                            app.error_to_show = Some(ErrorToShow::new(err.to_string()))
                         }
                     };
-                    if let Resource::Subscriptions { subscriptions } = &app.active_resource {
-                        if let Some(cursor) = app.content_cursor {
-                            let subscription = &subscriptions[cursor].name;
-
+                    if let Resource::Subscriptions = &app.active_resource {
+                        if let Some(subscription) = app.resources.selected_subscription() {
                             let (time_delta, time_str) = match length {
                                 crate::ResetLength::OneHour => {
                                     (TimeDelta::try_hours(1).expect("Expecting hours"), "1h")
@@ -339,25 +493,26 @@ pub async fn update(
 
                             app.confirmation_modal = Some(ConfirmationModal {
                                 message: format!(
-                                    "Seek '{subscription}' subscription for {time_str}?",
+                                    "Seek '{}' subscription for {time_str}?",
+                                    subscription.name
                                 ),
                                 command: ConfirmedCommand::SeekSubscription {
                                     tenant: app
-                                        .last_tenant
-                                        .as_ref()
-                                        .expect("Tenant must be set")
-                                        .clone(),
+                                        .resources
+                                        .selected_tenant_name()
+                                        .expect("tenant must be set")
+                                        .to_string(),
                                     namespace: app
-                                        .last_namespace
-                                        .as_ref()
-                                        .expect("Namespace must be set")
-                                        .clone(),
+                                        .resources
+                                        .selected_namespace_name()
+                                        .expect("namespace must be set")
+                                        .to_string(),
                                     topic: app
-                                        .last_topic
-                                        .as_ref()
-                                        .expect("Topic must be set")
-                                        .clone(),
-                                    sub_name: subscription.clone(),
+                                        .resources
+                                        .selected_topic_name()
+                                        .expect("namespace must be set")
+                                        .to_string(),
+                                    sub_name: subscription.name.clone(),
                                     time_delta,
                                     cfg: app.pulsar_admin_cfg.clone(),
                                 },
@@ -366,42 +521,39 @@ pub async fn update(
                     }
                 }
                 AppEvent::Control(ControlEvent::CycleSide) => {
-                    if let Resource::Listening { selected_side, .. } = &mut app.active_resource {
-                        *selected_side = match *selected_side {
-                            Side::Left => Side::Right { scroll_offset: 0 },
-                            Side::Right { .. } => Side::Left,
-                        };
+                    if let Resource::Listening = &app.active_resource {
+                        app.resources.listening.selected_side =
+                            match &app.resources.listening.selected_side {
+                                Side::Left => Side::Right { scroll_offset: 0 },
+                                Side::Right { .. } => Side::Left,
+                            };
                     }
                 }
                 AppEvent::Control(ControlEvent::Yank) => {
-                    if let Resource::Listening { messages, .. } = &app.active_resource {
-                        if let Some(cursor) = app.content_cursor {
-                            if let Some(content) = messages.get(cursor) {
-                                let content = &content.body;
-                                //TODO: Create this once and pass it around
-                                let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-                                ctx.set_contents(content.to_string()).unwrap();
-                            }
+                    if let Resource::Listening = &app.active_resource {
+                        if let Some(sub_message) = app.resources.selected_message() {
+                            let content = &sub_message.body;
+                            //TODO: Create this once and pass it around
+                            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+                            ctx.set_contents(content.to_string()).unwrap();
                         }
                     }
                 }
                 AppEvent::Control(ControlEvent::Subscribe) => {
-                    if let Resource::Topics { topics } = &app.active_resource {
-                        if let Some(cursor) = app.content_cursor {
-                            let topic = topics[cursor].clone();
-                            app.last_topic = Some(topic.name);
-                            app.active_resource = Resource::Listening {
-                                messages: Vec::new(),
-                                selected_side: Side::Left,
-                            };
-                            app.content_cursor = None;
+                    if let Resource::Topics = &app.active_resource {
+                        if let Some(topic) = app.resources.selected_topic().cloned() {
+                            app.active_resource = Resource::Listening;
+                            app.resources.listening.cursor = None;
                             let new_pulsar = app.pulsar.client.clone();
                             let new_sender = app.pulsar.sender.clone();
                             let (tx, rx) = oneshot::channel::<()>();
                             app.pulsar.active_sub_handle = Some(tx);
                             let _sub_handle = tokio::task::spawn(async move {
                                 pulsar_listener::listen_to_topic(
-                                    topic.fqn, new_sender, new_pulsar, rx,
+                                    topic.fqn.clone(),
+                                    new_sender,
+                                    new_pulsar,
+                                    rx,
                                 )
                                 .await
                             });
@@ -411,54 +563,23 @@ pub async fn update(
 
                 AppEvent::Control(ControlEvent::Up) => {
                     app.confirmation_modal = None;
-                    if let Resource::Listening {
-                        selected_side: Side::Right { scroll_offset },
-                        ..
-                    } = &mut app.active_resource
+                    if let Side::Right { scroll_offset } =
+                        &mut app.resources.listening.selected_side
                     {
                         *scroll_offset = scroll_offset.saturating_sub(1)
                     } else {
-                        app.content_cursor = match app.content_cursor {
-                            Some(cursor) => {
-                                if cursor <= 0 {
-                                    Some(
-                                        app.active_resource
-                                            .list_element_count()
-                                            .saturating_sub(1),
-                                    )
-                                } else {
-                                    Some(cursor - 1)
-                                }
-                            }
-                            None => Some(0),
-                        }
+                        app.resources.cursor_up(&app.active_resource)
                     }
                 }
 
                 AppEvent::Control(ControlEvent::Down) => {
                     app.confirmation_modal = None;
-                    if let Resource::Listening {
-                        selected_side: Side::Right { scroll_offset },
-                        ..
-                    } = &mut app.active_resource
+                    if let Side::Right { scroll_offset } =
+                        &mut app.resources.listening.selected_side
                     {
                         *scroll_offset = scroll_offset.saturating_add(1)
                     } else {
-                        app.content_cursor = match app.content_cursor {
-                            Some(cursor) => {
-                                if cursor
-                                    == app
-                                        .active_resource
-                                        .list_element_count()
-                                        .saturating_sub(1)
-                                {
-                                    Some(0)
-                                } else {
-                                    Some(cursor + 1)
-                                }
-                            }
-                            None => Some(0),
-                        }
+                        app.resources.cursor_down(&app.active_resource)
                     }
                 }
 
@@ -469,15 +590,12 @@ pub async fn update(
                         match &app.active_resource {
                             Resource::Tenants { .. } => {}
                             Resource::Namespaces { .. } => {
-                                let tenants = pulsar_admin::fetch_tenants(&app.pulsar.token).await;
+                                let tenants =
+                                    pulsar_admin::fetch_tenants(&app.pulsar_admin_cfg).await;
                                 match tenants {
                                     Ok(tenants) => {
-                                        if !tenants.is_empty() {
-                                            app.content_cursor = app.last_cursor.or(Some(0))
-                                        } else {
-                                            app.content_cursor = None;
-                                        };
-                                        app.active_resource = Resource::Tenants { tenants };
+                                        app.resources.tenants.tenants = tenants;
+                                        app.active_resource = Resource::Tenants;
                                     }
                                     Err(err) => {
                                         app.error_to_show = Some(ErrorToShow::new(format!(
@@ -487,23 +605,18 @@ pub async fn update(
                                     }
                                 }
                             }
-                            Resource::Topics { .. } => {
-                                if let Some(last_tenant) = &app.last_tenant {
+                            Resource::Topics => {
+                                if let Some(selected_tenant) = &app.resources.selected_tenant() {
                                     let namespaces = pulsar_admin::fetch_namespaces(
-                                        last_tenant,
+                                        &selected_tenant.name,
                                         &app.pulsar_admin_cfg,
                                     )
                                     .await;
 
                                     match namespaces {
                                         Ok(namespaces) => {
-                                            if !namespaces.is_empty() {
-                                                app.content_cursor = app.last_cursor.or(Some(0))
-                                            } else {
-                                                app.content_cursor = None;
-                                            };
-                                            app.active_resource =
-                                                Resource::Namespaces { namespaces };
+                                            app.resources.namespaces.namespaces = namespaces;
+                                            app.active_resource = Resource::Namespaces;
                                         }
                                         Err(err) => {
                                             app.error_to_show = Some(ErrorToShow::new(format!(
@@ -515,24 +628,21 @@ pub async fn update(
                                 }
                             }
 
-                            Resource::Subscriptions { .. } => {
-                                if let Some(last_namespace) = &app.last_namespace {
+                            Resource::Subscriptions => {
+                                if let Some(selected_namespace) =
+                                    &app.resources.selected_namespace()
+                                {
                                     let topics = pulsar_admin::fetch_topics(
-                                        &app.last_tenant.clone().unwrap(),
-                                        last_namespace,
+                                        &app.resources.selected_tenant().unwrap().name,
+                                        &selected_namespace.name,
                                         &app.pulsar_admin_cfg,
                                     )
                                     .await;
 
                                     match topics {
                                         Ok(topics) => {
-                                            if !topics.is_empty() {
-                                                app.content_cursor = app.last_cursor.or(Some(0))
-                                            } else {
-                                                app.content_cursor = None;
-                                            };
-
-                                            app.active_resource = Resource::Topics { topics };
+                                            app.resources.topics.topics = topics;
+                                            app.active_resource = Resource::Topics;
                                         }
                                         Err(err) => {
                                             app.error_to_show = Some(ErrorToShow::new(format!(
@@ -543,31 +653,26 @@ pub async fn update(
                                     }
                                 }
                             }
-                            Resource::Listening { .. } => {
-                                if let Some(last_namespace) = &app.last_namespace {
+                            Resource::Listening => {
+                                if let Some(selected_namespace) =
+                                    &app.resources.selected_namespace()
+                                {
                                     let topics = pulsar_admin::fetch_topics(
-                                        &app.last_tenant.clone().unwrap(),
-                                        last_namespace,
+                                        &app.resources.selected_tenant().unwrap().name,
+                                        &selected_namespace.name,
                                         &app.pulsar_admin_cfg,
                                     )
                                     .await;
 
                                     match topics {
                                         Ok(topics) => {
-                                            if !topics.is_empty() {
-                                                app.content_cursor = app.last_cursor.or(Some(0))
-                                            } else {
-                                                app.content_cursor = None;
-                                            };
+                                            app.resources.topics.topics = topics;
+                                            app.active_resource = Resource::Topics;
 
-                                            app.active_resource = Resource::Topics { topics };
                                             if let Some(sender) =
                                                 app.pulsar.active_sub_handle.take()
                                             {
-                                                sender.send({}).map_err(|()| {
-                                                    anyhow!(
-                                                "Failed to send termination singal to subscription"
-                                            )
+                                                sender.send(()).map_err(|()| { anyhow!( "Failed to send termination singal to subscription")
                                                 })?
                                             };
                                         }
@@ -584,13 +689,13 @@ pub async fn update(
                     }
                 }
                 AppEvent::SubscriptionEvent(event) => {
-                    if let Resource::Listening { messages, .. } = &mut app.active_resource {
-                        messages.push(SubMessage {
+                    if let Resource::Listening = &mut app.active_resource {
+                        app.resources.listening.messages.push(SubMessage {
                             body: serde_json::to_string(&event.body)?,
                             properties: event.properties,
                         });
-                        if app.content_cursor.is_none() {
-                            app.content_cursor = Some(0)
+                        if app.resources.listening.cursor.is_none() {
+                            app.resources.listening.cursor = Some(0)
                         }
                     }
                 }
@@ -598,59 +703,47 @@ pub async fn update(
                 AppEvent::Control(ControlEvent::Enter) => {
                     app.confirmation_modal = None;
                     match app.active_resource.clone() {
-                        Resource::Tenants { tenants } => {
-                            if let Some(cursor) = app.content_cursor {
-                                if !tenants.is_empty() {
-                                    let tenant = &tenants[cursor].name;
-                                    let namespaces = pulsar_admin::fetch_namespaces(
-                                        &tenant,
-                                        &app.pulsar_admin_cfg,
-                                    )
-                                    .await;
+                        Resource::Tenants => {
+                            if let Some(tenant) = app.resources.selected_tenant() {
+                                let namespaces = pulsar_admin::fetch_namespaces(
+                                    &tenant.name,
+                                    &app.pulsar_admin_cfg,
+                                )
+                                .await;
 
-                                    match namespaces {
-                                        Ok(namespaces) => {
-                                            app.last_cursor = app.content_cursor;
-                                            if !namespaces.is_empty() {
-                                                app.content_cursor = Some(0);
-                                            } else {
-                                                app.content_cursor = None;
-                                            };
-                                            app.active_resource =
-                                                Resource::Namespaces { namespaces };
-                                            app.last_tenant = Some(tenant.clone())
-                                        }
-                                        Err(err) => {
-                                            app.error_to_show = Some(ErrorToShow::new(format!(
-                                                "Failed to fetch namespaces :[\n {:?}",
-                                                err
-                                            )));
-                                        }
+                                match namespaces {
+                                    Ok(namespaces) => {
+                                        app.resources.namespaces.cursor = get_new_cursor(
+                                            &namespaces,
+                                            app.resources.namespaces.cursor,
+                                        );
+                                        app.resources.namespaces.namespaces = namespaces;
+                                        app.active_resource = Resource::Namespaces;
+                                    }
+                                    Err(err) => {
+                                        app.error_to_show = Some(ErrorToShow::new(format!(
+                                            "Failed to fetch namespaces :[\n {:?}",
+                                            err
+                                        )));
                                     }
                                 }
                             }
                         }
-                        Resource::Namespaces { namespaces } => {
-                            if let Some(cursor) = app.content_cursor {
-                                let namespace = &namespaces[cursor].name;
+                        Resource::Namespaces => {
+                            if let Some(namespace) = app.resources.selected_namespace() {
                                 let topics = pulsar_admin::fetch_topics(
-                                    &app.last_tenant.clone().unwrap(),
-                                    &namespace,
+                                    &app.resources.selected_tenant().unwrap().name,
+                                    &namespace.name,
                                     &app.pulsar_admin_cfg,
                                 )
                                 .await;
 
                                 match topics {
                                     Ok(topics) => {
-                                        app.last_cursor = app.content_cursor;
-                                        if !topics.is_empty() {
-                                            app.content_cursor = Some(0);
-                                        } else {
-                                            app.content_cursor = None;
-                                        };
-                                        app.content_cursor = Some(0);
-                                        app.active_resource = Resource::Topics { topics };
-                                        app.last_namespace = Some(namespace.to_string())
+                                        app.resources.topics.cursor =
+                                            get_new_cursor(&topics, app.resources.topics.cursor);
+                                        app.resources.topics.topics = topics;
+                                        app.active_resource = Resource::Topics;
                                     }
                                     Err(err) => {
                                         app.error_to_show = Some(ErrorToShow::new(format!(
@@ -661,47 +754,58 @@ pub async fn update(
                                 }
                             }
                         }
-                        Resource::Topics { topics } => {
-                            if let Some(cursor) = app.content_cursor {
-                                if !topics.is_empty() {
-                                    let topic = &topics[cursor].name;
-                                    let subscriptions = pulsar_admin::fetch_subs(
-                                        &app.last_tenant.clone().unwrap(),
-                                        app.last_namespace.as_ref().unwrap(),
-                                        topic,
-                                        &app.pulsar_admin_cfg,
-                                    )
-                                    .await;
+                        Resource::Topics => {
+                            if let Some(topic) = &app.resources.selected_topic() {
+                                let subscriptions = pulsar_admin::fetch_subs(
+                                    &app.resources.selected_tenant().unwrap().name,
+                                    &app.resources.selected_namespace().unwrap().name,
+                                    &topic.name,
+                                    &app.pulsar_admin_cfg,
+                                )
+                                .await;
 
-                                    match subscriptions {
-                                        Ok(subscriptions) => {
-                                            app.last_cursor = app.content_cursor;
-                                            if !subscriptions.is_empty() {
-                                                app.content_cursor = Some(0);
-                                            } else {
-                                                app.content_cursor = None;
-                                            };
-                                            app.active_resource =
-                                                Resource::Subscriptions { subscriptions };
-                                            app.last_topic = Some(topic.to_string())
-                                        }
-                                        Err(err) => {
-                                            app.error_to_show = Some(ErrorToShow::new(format!(
-                                                "Failed to fetch subscriptions :[\n {:?}",
-                                                err
-                                            )));
-                                        }
+                                match subscriptions {
+                                    Ok(subscriptions) => {
+                                        app.resources.subscriptions.cursor = get_new_cursor(
+                                            &subscriptions,
+                                            app.resources.subscriptions.cursor,
+                                        );
+                                        app.resources.subscriptions.subscriptions = subscriptions;
+                                        app.active_resource = Resource::Subscriptions;
+                                    }
+                                    Err(err) => {
+                                        app.error_to_show = Some(ErrorToShow::new(format!(
+                                            "Failed to fetch subscriptions :[\n {:?}",
+                                            err
+                                        )));
                                     }
                                 }
                             }
                         }
                         Resource::Subscriptions { .. } => {}
-                        Resource::Listening { .. } => {}
+                        Resource::Listening => {}
                     }
                 }
             }
         }
     }
 
-    Ok({})
+    Ok(())
+}
+
+fn get_new_cursor<A>(col: &[A], old_cursor: Option<usize>) -> Option<usize> {
+    if col.is_empty() {
+        None
+    } else {
+        match old_cursor {
+            Some(old_cursor) => {
+                if col.get(old_cursor).is_some() {
+                    Some(old_cursor)
+                } else {
+                    Some(0)
+                }
+            }
+            None => Some(0),
+        }
+    }
 }
