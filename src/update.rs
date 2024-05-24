@@ -382,7 +382,10 @@ pub async fn update<'a>(
                             show_info_msg(app, "Seeked successfully.");
                         }
                         Err(err) => {
-                            show_error_msg(app, format!( "Failed to fetch subscriptions :[ {:?}", err));
+                            show_error_msg(
+                                app,
+                                format!("Failed to fetch subscriptions :[ {:?}", err),
+                            );
                         }
                     }
                 }
@@ -425,12 +428,18 @@ pub async fn update<'a>(
                                     show_info_msg(app, "Subscription deleted.");
                                 }
                                 Err(err) => {
-                                    show_error_msg(app, format!( "Failed to fetch subscriptions :[ {:?}", err));
+                                    show_error_msg(
+                                        app,
+                                        format!("Failed to fetch subscriptions :[ {:?}", err),
+                                    );
                                 }
                             }
                         }
                         Err(err) => {
-                            show_error_msg(app, format!( "Failed to delete subscription :[ {:?}", err));
+                            show_error_msg(
+                                app,
+                                format!("Failed to delete subscription :[ {:?}", err),
+                            );
                         }
                     }
 
@@ -579,6 +588,7 @@ pub async fn update<'a>(
                         if let Some(topic) = app.resources.selected_topic().cloned() {
                             app.active_resource = Resource::Listening;
                             app.resources.listening.cursor = None;
+                            app.resources.listening.messages = vec![];
                             let new_pulsar = app.pulsar.client.clone();
                             let new_sender = app.pulsar.sender.clone();
                             let (tx, rx) = oneshot::channel::<()>();
@@ -633,7 +643,10 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Tenants;
                                     }
                                     Err(err) => {
-                                        show_error_msg(app, format!( "Failed to fetch tenants :[ {:?}", err));
+                                        show_error_msg(
+                                            app,
+                                            format!("Failed to fetch tenants :[ {:?}", err),
+                                        );
                                     }
                                 }
                             }
@@ -650,7 +663,10 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Namespaces;
                                     }
                                     Err(err) => {
-                                        show_error_msg(app, format!( "Failed to fetch namespaces :[ {:?}", err));
+                                        show_error_msg(
+                                            app,
+                                            format!("Failed to fetch namespaces :[ {:?}", err),
+                                        );
                                     }
                                 }
                             }
@@ -669,7 +685,10 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Topics;
                                     }
                                     Err(err) => {
-                                        show_error_msg(app, format!( "Failed to fetch topics :[ {:?}", err));
+                                        show_error_msg(
+                                            app,
+                                            format!("Failed to fetch topics :[ {:?}", err),
+                                        );
                                     }
                                 }
                             }
@@ -689,7 +708,10 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Subscriptions;
                                     }
                                     Err(err) => {
-                                        show_error_msg(app, format!( "Failed to fetch subscriptions :[ {:?}", err));
+                                        show_error_msg(
+                                            app,
+                                            format!("Failed to fetch subscriptions :[ {:?}", err),
+                                        );
                                     }
                                 }
                             }
@@ -713,7 +735,10 @@ pub async fn update<'a>(
                                         };
                                     }
                                     Err(err) => {
-                                        show_error_msg(app, format!( "Failed to fetch topics :[ {:?}", err));
+                                        show_error_msg(
+                                            app,
+                                            format!("Failed to fetch topics :[ {:?}", err),
+                                        );
                                     }
                                 }
                             }
@@ -753,7 +778,10 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Namespaces;
                                     }
                                     Err(err) => {
-                                        show_error_msg(app, format!( "Failed to fetch namespaces :[ {:?}", err));
+                                        show_error_msg(
+                                            app,
+                                            format!("Failed to fetch namespaces :[ {:?}", err),
+                                        );
                                     }
                                 }
                             }
@@ -775,7 +803,10 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Topics;
                                     }
                                     Err(err) => {
-                                        show_error_msg(app, format!( "Failed to fetch topics :[ {:?}", err));
+                                        show_error_msg(
+                                            app,
+                                            format!("Failed to fetch topics :[ {:?}", err),
+                                        );
                                     }
                                 }
                             }
@@ -804,7 +835,10 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Subscriptions;
                                     }
                                     Err(err) => {
-                                        show_error_msg(app, format!( "Failed to fetch subscriptions :[ {:?}", err));
+                                        show_error_msg(
+                                            app,
+                                            format!("Failed to fetch subscriptions :[ {:?}", err),
+                                        );
                                     }
                                 }
                             }
@@ -836,7 +870,10 @@ pub async fn update<'a>(
                                         app.active_resource = Resource::Consumers;
                                     }
                                     Err(err) => {
-                                        show_error_msg(app, format!( "Failed to fetch consumers :[ {:?}", err));
+                                        show_error_msg(
+                                            app,
+                                            format!("Failed to fetch consumers :[ {:?}", err),
+                                        );
                                     }
                                 }
                             }
