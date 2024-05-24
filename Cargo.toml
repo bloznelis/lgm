@@ -2,6 +2,14 @@
 name = "lgm"
 version = "1.3.2"
 edition = "2021"
+authors = ["bloznelis <lukas.bloznelis@gmail.com>"]
+description = "Pulsar cluster managment in terminal"
+license = "MIT"
+homepage = "https://github.com/bloznelis/lgm"
+repository = "https://github.com/bloznelis/lgm"
+edition = "2021"
+keywords = ["pulsar", "terminal", "tui"]
+readme = "README.md"
 
 [dependencies]
 futures = "0.3"
