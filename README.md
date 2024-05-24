@@ -9,7 +9,7 @@ Puslar cluser managment app in terminal.
 ### Cargo
 `cargo install lgm`
 
-**note:** you might need some system-wide libraries, like protobuf and x11-dev for `lgm` to build.
+**note:** you might need some system-wide libraries, like protobuf and libx11-dev for `lgm` to build.
 
 ### Prebuilt binaries
 Head over to the [releases](https://github.com/bloznelis/lgm/releases) and grab the latest binary based on your platform.
