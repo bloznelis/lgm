@@ -575,11 +575,17 @@ pub async fn update<'a>(
                     if let Resource::Listening = &app.active_resource {
                         if let Some(sub_message) = app.resources.selected_message() {
                             let content = &sub_message.body;
-                            //TODO: Create this once and pass it around
-                            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-                            ctx.set_contents(content.to_string()).unwrap();
+                            let res = ClipboardContext::new()
+                                .map_err(|_| anyhow!("Failed to get the clipboard."))
+                                .and_then(|mut ctx| {
+                                    ctx.set_contents(content.to_owned())
+                                        .map_err(|_| anyhow!("Failed to copy to clipboard."))
+                                });
 
-                            show_info_msg(app, "Message copied to clipboard.");
+                            match res {
+                                Ok(_) => show_info_msg(app, "Message copied to clipboard."),
+                                Err(err) => show_error_msg(app, err.to_string()),
+                            }
                         }
                     }
                 }
