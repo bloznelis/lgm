@@ -1,6 +1,6 @@
 [package]
 name = "lgm"
-version = "1.3.3"
+version = "1.4.0"
 authors = ["bloznelis <lukas.bloznelis@gmail.com>"]
 description = "Pulsar cluster managment in terminal"
 license = "MIT"
