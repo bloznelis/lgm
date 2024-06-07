@@ -318,6 +318,7 @@ pub struct App {
     pub active_resource: Resource,
     pub resources: Resources,
     pub pulsar_admin_cfg: Configuration,
+    pub cluster_name: String
 }
 
 pub struct PulsarApp {

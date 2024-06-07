@@ -19,6 +19,7 @@ use crate::update::{
 use crate::{App, Resource, Side};
 
 struct HeaderLayout {
+    info_rect: Rect,
     help_rects: Vec<Rect>,
     logo: Rect,
 }
@@ -32,7 +33,14 @@ struct LayoutChunks {
 pub fn draw_new(frame: &mut Frame, app: &App) {
     let layout = &make_layout(frame, app);
     draw_logo(frame, layout);
-    draw_info(frame, app, layout);
+    draw_notification(frame, app, layout);
+    draw_info(
+        frame,
+        layout,
+        Info {
+            cluster_name: LabeledItem::info("cluster:", &app.cluster_name),
+        },
+    );
 
     match &app.active_resource {
         Resource::Tenants => draw_tenants(frame, layout, &app.resources.tenants),
@@ -130,7 +138,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 }
 
 fn draw_tenants(frame: &mut Frame, layout: &LayoutChunks, tenants: &Tenants) {
-    let tenants_help = vec![HelpItem::new("<enter>", "namespaces")];
+    let tenants_help = vec![LabeledItem::help("<enter>", "namespaces")];
     draw_help(frame, layout, tenants_help);
 
     let content_block = Block::default()
@@ -162,8 +170,8 @@ fn draw_namespaces(
     namespaces: &Namespaces,
 ) {
     let help = vec![
-        HelpItem::new("<esc>", "back"),
-        HelpItem::new("<enter>", "topics"),
+        LabeledItem::help("<esc>", "back"),
+        LabeledItem::help("<enter>", "topics"),
     ];
     draw_help(frame, layout, help);
 
@@ -191,9 +199,9 @@ fn draw_namespaces(
 
 fn draw_topics(frame: &mut Frame, layout: &LayoutChunks, namespace: String, topics: &Topics) {
     let help = vec![
-        HelpItem::new("<esc>", "back"),
-        HelpItem::new("<enter>", "subs"),
-        HelpItem::new("<c-s>", "listen"),
+        LabeledItem::help("<esc>", "back"),
+        LabeledItem::help("<enter>", "subs"),
+        LabeledItem::help("<c-s>", "listen"),
     ];
     draw_help(frame, layout, help);
 
@@ -226,12 +234,12 @@ fn draw_subscriptions(
     subscriptions: &Subscriptions,
 ) {
     let help = vec![
-        HelpItem::new("<esc>", "back"),
-        HelpItem::new("<enter>", "consumers"),
-        HelpItem::new("<c-d>", "delete"),
-        HelpItem::new("u", "seek 1h"),
-        HelpItem::new("i", "seek 24h"),
-        HelpItem::new("o", "seek 1 week"),
+        LabeledItem::help("<esc>", "back"),
+        LabeledItem::help("<enter>", "consumers"),
+        LabeledItem::help("<c-d>", "delete"),
+        LabeledItem::help("u", "seek 1h"),
+        LabeledItem::help("i", "seek 24h"),
+        LabeledItem::help("o", "seek 1 week"),
     ];
     draw_help(frame, layout, help);
 
@@ -281,7 +289,7 @@ fn draw_consumers(
     subscription: String,
     consumers: &Consumers,
 ) {
-    let help = vec![HelpItem::new("<esc>", "back")];
+    let help = vec![LabeledItem::help("<esc>", "back")];
     draw_help(frame, layout, help);
 
     let content_block = Block::default()
@@ -344,12 +352,12 @@ fn draw_listening(
     topic_name: String,
 ) {
     let help = vec![
-        HelpItem::new("<esc>", "back"),
-        HelpItem::new("<tab>", "cycle side"),
-        HelpItem::new("u", "seek 1h"),
-        HelpItem::new("i", "seek 24h"),
-        HelpItem::new("o", "seek 1 week"),
-        HelpItem::new("y", "copy to clipboard"),
+        LabeledItem::help("<esc>", "back"),
+        LabeledItem::help("<tab>", "cycle side"),
+        LabeledItem::help("u", "seek 1h"),
+        LabeledItem::help("i", "seek 24h"),
+        LabeledItem::help("o", "seek 1 week"),
+        LabeledItem::help("y", "copy to clipboard"),
     ];
     draw_help(frame, layout, help);
 
@@ -454,7 +462,8 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
 
             LayoutChunks {
                 header: HeaderLayout {
-                    help_rects: vec![header_chunks[0], header_chunks[1], header_chunks[2]],
+                    info_rect: header_chunks[0],
+                    help_rects: vec![header_chunks[1], header_chunks[2]],
                     logo: header_chunks[3],
                 },
                 message: Some(chunks[2]),
@@ -481,7 +490,8 @@ fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
 
             LayoutChunks {
                 header: HeaderLayout {
-                    help_rects: vec![header_chunks[0], header_chunks[1], header_chunks[2]],
+                    info_rect: header_chunks[0],
+                    help_rects: vec![header_chunks[1], header_chunks[2]],
                     logo: header_chunks[3],
                 },
                 message: None,
@@ -507,7 +517,18 @@ fn draw_logo(frame: &mut Frame, layout: &LayoutChunks) {
     frame.render_widget(logo, layout.header.logo);
 }
 
-fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<HelpItem>) {
+fn draw_info(frame: &mut Frame, layout: &LayoutChunks, info: Info) {
+    let help_block = Block::default()
+        .borders(Borders::NONE)
+        .padding(Padding::new(1, 1, 1, 1));
+    //TODO: add more info lines to a vector, once we have more than just cluster name to show
+    let items = vec![Line::from(info.cluster_name)];
+    let paragraph = Paragraph::new(Text::from(items)).block(help_block.clone());
+
+    frame.render_widget(paragraph, layout.header.info_rect);
+}
+
+fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<LabeledItem>) {
     let help_block = Block::default()
         .borders(Borders::NONE)
         .padding(Padding::new(1, 1, 1, 1));
@@ -521,9 +542,11 @@ fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<HelpItem>
         .for_each(|(i, p)| frame.render_widget(p, layout.header.help_rects[i]));
 }
 
-fn draw_info(frame: &mut Frame, app: &App, layout: &LayoutChunks) {
+fn draw_notification(frame: &mut Frame, app: &App, layout: &LayoutChunks) {
     if let Some((info, rect)) = app.info_to_show.as_ref().zip(layout.message) {
-        let block = Block::default().borders(Borders::NONE).padding(Padding::horizontal(1));
+        let block = Block::default()
+            .borders(Borders::NONE)
+            .padding(Padding::horizontal(1));
         let color = if info.is_error {
             Color::Red
         } else {
@@ -539,27 +562,43 @@ fn draw_info(frame: &mut Frame, app: &App, layout: &LayoutChunks) {
     }
 }
 
+
 #[derive(Clone)]
-struct HelpItem {
-    keybind: String,
-    description: String,
+struct Info {
+    cluster_name: LabeledItem,
 }
 
-impl HelpItem {
-    fn new(key: &str, desc: &str) -> HelpItem {
-        HelpItem {
+#[derive(Clone)]
+struct LabeledItem {
+    keybind: String,
+    description: String,
+    color: Color
+}
+
+impl LabeledItem {
+    fn help(key: &str, desc: &str) -> LabeledItem {
+        LabeledItem {
             keybind: key.to_string(),
             description: desc.to_string(),
+            color: Color::Green
+        }
+    }
+
+    fn info(key: &str, desc: &str) -> LabeledItem {
+        LabeledItem {
+            keybind: key.to_string(),
+            description: desc.to_string(),
+            color: Color::Black
         }
     }
 }
 
-impl From<HelpItem> for Line<'_> {
-    fn from(value: HelpItem) -> Self {
+impl From<LabeledItem> for Line<'_> {
+    fn from(value: LabeledItem) -> Self {
         Line::from(vec![
             Span::raw(value.keybind).style(
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(value.color)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
@@ -568,8 +607,8 @@ impl From<HelpItem> for Line<'_> {
     }
 }
 
-impl From<HelpItem> for String {
-    fn from(value: HelpItem) -> Self {
+impl From<LabeledItem> for String {
+    fn from(value: LabeledItem) -> Self {
         String::from(Line::from(vec![
             Span::raw(value.keybind).style(Style::default().fg(Color::Green)),
             Span::raw(" "),
@@ -578,8 +617,8 @@ impl From<HelpItem> for String {
     }
 }
 
-impl From<HelpItem> for Text<'_> {
-    fn from(value: HelpItem) -> Self {
+impl From<LabeledItem> for Text<'_> {
+    fn from(value: LabeledItem) -> Self {
         Text::from(Into::<Line>::into(value))
     }
 }

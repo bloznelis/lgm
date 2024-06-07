@@ -6,14 +6,20 @@ use crate::update::Topic;
 use anyhow::anyhow;
 use chrono::TimeDelta;
 use chrono::Utc;
+use futures::TryFutureExt;
 use itertools::Itertools;
 use pulsar_admin_sdk::apis::configuration::Configuration;
+use pulsar_admin_sdk::apis::clusters_api::clusters_base_get_clusters;
 use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_tenant_namespaces;
 use pulsar_admin_sdk::apis::namespaces_api::namespaces_get_topics;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_delete_subscription;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_get_stats;
 use pulsar_admin_sdk::apis::persistent_topic_api::persistent_topics_reset_cursor;
 use pulsar_admin_sdk::apis::tenants_api::tenants_base_get_tenants;
+
+pub async fn fetch_clusters(cfg: &Configuration) -> anyhow::Result<Vec<String>> {
+    clusters_base_get_clusters(cfg).map_err(|err| anyhow!("Failed to tech clusters {err}")).await
+}
 
 pub async fn fetch_consumers(
     tenant: &str,

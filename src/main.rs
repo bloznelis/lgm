@@ -10,7 +10,7 @@ use auth::{auth, read_config};
 use clap::Parser;
 use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
 use pulsar::{Pulsar, TokioExecutor};
-use pulsar_admin::fetch_namespaces;
+use pulsar_admin::{fetch_clusters, fetch_namespaces};
 use pulsar_admin_sdk::apis::configuration::Configuration;
 use pulsar_listener::TopicEvent;
 use std::path::PathBuf;
@@ -100,6 +100,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
     //can we use tokio thread here?
     let _handle = thread::spawn(move || listen_for_control(control_sender));
     let namespaces: Vec<Namespace> = fetch_namespaces(&default_tenant, &conf).await?;
+    let cluster_name: String = fetch_clusters(&conf).await?.first().cloned().unwrap_or("unknown cluster".to_string());
 
     let mut app = App {
         pulsar: PulsarApp {
@@ -137,6 +138,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
             },
         },
         pulsar_admin_cfg: conf,
+        cluster_name
     };
 
     let mut stdout = io::stdout();
