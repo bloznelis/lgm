@@ -85,7 +85,7 @@ pub fn draw_new(frame: &mut Frame, app: &App) {
             &app.resources.consumers,
         ),
 
-        Resource::Listening => draw_listening(
+        Resource::Listening { .. } => draw_listening(
             frame,
             layout,
             &app.resources.listening,
@@ -562,7 +562,6 @@ fn draw_notification(frame: &mut Frame, app: &App, layout: &LayoutChunks) {
     }
 }
 
-
 #[derive(Clone)]
 struct Info {
     cluster_name: LabeledItem,
@@ -572,7 +571,7 @@ struct Info {
 struct LabeledItem {
     keybind: String,
     description: String,
-    color: Color
+    color: Color,
 }
 
 impl LabeledItem {
@@ -580,7 +579,7 @@ impl LabeledItem {
         LabeledItem {
             keybind: key.to_string(),
             description: desc.to_string(),
-            color: Color::Green
+            color: Color::Green,
         }
     }
 
@@ -588,7 +587,7 @@ impl LabeledItem {
         LabeledItem {
             keybind: key.to_string(),
             description: desc.to_string(),
-            color: Color::Black
+            color: Color::Black,
         }
     }
 }

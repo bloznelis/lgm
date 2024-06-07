@@ -132,7 +132,6 @@ async fn run(args: Args) -> anyhow::Result<()> {
                 cursor: None
             },
             listening: Listening {
-                sub_name: None,
                 messages: vec![],
                 selected_side: Side::Left,
                 cursor: None,

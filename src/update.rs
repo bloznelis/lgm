@@ -1,5 +1,4 @@
 use crate::pulsar_admin;
-use uuid::Uuid;
 use anyhow::anyhow;
 use chrono::TimeDelta;
 use clipboard::{ClipboardContext, ClipboardProvider};
@@ -16,6 +15,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{oneshot, Mutex};
+use uuid::Uuid;
 
 use ratatui::{backend::CrosstermBackend, Terminal};
 
@@ -54,7 +54,6 @@ pub struct Consumers {
 
 #[derive(Clone)]
 pub struct Listening {
-    pub sub_name: Option<String>,
     pub messages: Vec<SubMessage>,
     pub selected_side: Side,
     pub cursor: Option<usize>,
@@ -67,7 +66,7 @@ pub enum Resource {
     Topics,
     Subscriptions,
     Consumers,
-    Listening,
+    Listening { sub_name: String },
 }
 
 impl std::fmt::Display for Resource {
@@ -196,7 +195,7 @@ impl Resources {
                     cursor_up(self.consumers.cursor, self.consumers.consumers.len())
             }
 
-            Resource::Listening => {
+            Resource::Listening { .. } => {
                 self.listening.cursor =
                     cursor_up(self.listening.cursor, self.listening.messages.len())
             }
@@ -228,7 +227,7 @@ impl Resources {
                     cursor_down(self.consumers.cursor, self.consumers.consumers.len())
             }
 
-            Resource::Listening => {
+            Resource::Listening { .. } => {
                 self.listening.cursor =
                     cursor_down(self.listening.cursor, self.listening.messages.len())
             }
@@ -320,7 +319,7 @@ pub struct App {
     pub active_resource: Resource,
     pub resources: Resources,
     pub pulsar_admin_cfg: Configuration,
-    pub cluster_name: String
+    pub cluster_name: String,
 }
 
 pub struct PulsarApp {
@@ -487,7 +486,7 @@ pub async fn update<'a>(
                     }
                 }
                 AppEvent::Control(ControlEvent::ResetSubscription(length)) => {
-                    if let Resource::Listening = &app.active_resource {
+                    if let Resource::Listening { sub_name } = &app.active_resource {
                         let length = match length {
                             crate::ResetLength::OneHour => {
                                 TimeDelta::try_hours(1).expect("Expecting hours")
@@ -510,7 +509,7 @@ pub async fn update<'a>(
                             app.resources
                                 .selected_topic_name()
                                 .expect("namespace must be set"),
-                            "lgm_subscription",
+                            sub_name,
                             &app.pulsar_admin_cfg,
                             length,
                         )
@@ -566,7 +565,7 @@ pub async fn update<'a>(
                     }
                 }
                 AppEvent::Control(ControlEvent::CycleSide) => {
-                    if let Resource::Listening = &app.active_resource {
+                    if let Resource::Listening { .. } = &app.active_resource {
                         app.resources.listening.selected_side =
                             match &app.resources.listening.selected_side {
                                 Side::Left => Side::Right { scroll_offset: 0 },
@@ -575,7 +574,7 @@ pub async fn update<'a>(
                     }
                 }
                 AppEvent::Control(ControlEvent::Yank) => {
-                    if let Resource::Listening = &app.active_resource {
+                    if let Resource::Listening { .. } = &app.active_resource {
                         if let Some(sub_message) = app.resources.selected_message() {
                             let content = &sub_message.body;
                             let res = ClipboardContext::new()
@@ -595,9 +594,9 @@ pub async fn update<'a>(
                 AppEvent::Control(ControlEvent::Subscribe) => {
                     if let Resource::Topics = &app.active_resource {
                         if let Some(topic) = app.resources.selected_topic().cloned() {
-                            app.active_resource = Resource::Listening;
-                            let sub_name = format!("lgm_subscription_{}", Uuid::new_v4().to_string());
-                            app.resources.listening.sub_name = Some(sub_name.clone());
+                            let sub_name = format!("lgm_subscription_{}", Uuid::new_v4());
+                            app.active_resource =
+                                Resource::Listening { sub_name: sub_name.clone() };
                             app.resources.listening.cursor = None;
                             app.resources.listening.messages = vec![];
                             let new_pulsar = app.pulsar.client.clone();
@@ -728,7 +727,7 @@ pub async fn update<'a>(
                                 }
                             }
 
-                            Resource::Listening => {
+                            Resource::Listening { .. } => {
                                 let topics = pulsar_admin::fetch_topics(
                                     &app.resources.selected_tenant().unwrap().name,
                                     &app.resources.selected_namespace().unwrap().name,
@@ -758,7 +757,7 @@ pub async fn update<'a>(
                     }
                 }
                 AppEvent::SubscriptionEvent(event) => {
-                    if let Resource::Listening = &mut app.active_resource {
+                    if let Resource::Listening { .. } = &mut app.active_resource {
                         app.resources.listening.messages.push(SubMessage {
                             body: serde_json::to_string(&event.body)?,
                             properties: event.properties,
@@ -891,7 +890,7 @@ pub async fn update<'a>(
                             }
                         }
                         Resource::Consumers => {}
-                        Resource::Listening => {}
+                        Resource::Listening { .. } => {}
                     }
                 }
             }
