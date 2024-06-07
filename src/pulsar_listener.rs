@@ -34,6 +34,7 @@ impl DeserializeMessage for TopicEvent {
 }
 
 pub async fn listen_to_topic(
+    sub_name: String,
     topic_fqn: String,
     event_sender: Sender<AppEvent>,
     pulsar: Arc<Mutex<Pulsar<TokioExecutor>>>,
@@ -49,9 +50,8 @@ pub async fn listen_to_topic(
                 .with_initial_position(InitialPosition::Latest),
         )
         .with_topic(topic_fqn)
-        .with_consumer_name("lgm")
         .with_subscription_type(SubType::Exclusive)
-        .with_subscription("lgm_subscription")
+        .with_subscription(sub_name)
         .build()
         .await?;
 

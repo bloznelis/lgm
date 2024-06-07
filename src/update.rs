@@ -1,4 +1,5 @@
 use crate::pulsar_admin;
+use uuid::Uuid;
 use anyhow::anyhow;
 use chrono::TimeDelta;
 use clipboard::{ClipboardContext, ClipboardProvider};
@@ -53,6 +54,7 @@ pub struct Consumers {
 
 #[derive(Clone)]
 pub struct Listening {
+    pub sub_name: Option<String>,
     pub messages: Vec<SubMessage>,
     pub selected_side: Side,
     pub cursor: Option<usize>,
@@ -594,6 +596,8 @@ pub async fn update<'a>(
                     if let Resource::Topics = &app.active_resource {
                         if let Some(topic) = app.resources.selected_topic().cloned() {
                             app.active_resource = Resource::Listening;
+                            let sub_name = format!("lgm_subscription_{}", Uuid::new_v4().to_string());
+                            app.resources.listening.sub_name = Some(sub_name.clone());
                             app.resources.listening.cursor = None;
                             app.resources.listening.messages = vec![];
                             let new_pulsar = app.pulsar.client.clone();
@@ -602,6 +606,7 @@ pub async fn update<'a>(
                             app.pulsar.active_sub_handle = Some(tx);
                             let _sub_handle = tokio::task::spawn(async move {
                                 pulsar_listener::listen_to_topic(
+                                    sub_name,
                                     topic.fqn.clone(),
                                     new_sender,
                                     new_pulsar,

@@ -27,3 +27,4 @@ clipboard = "0.5"
 chrono = "0.4"
 itertools = "0.12"
 clap = { version = "4.5", features = ["derive"] }
+uuid = "1.8.0"
