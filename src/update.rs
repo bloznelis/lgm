@@ -777,6 +777,7 @@ pub async fn update<'a>(
                                 match tenants {
                                     Ok(tenants) => {
                                         app.resources.tenants.tenants = tenants;
+                                        app.resources.tenants.tenants.sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Tenants;
                                     }
                                     Err(err) => {
@@ -797,6 +798,7 @@ pub async fn update<'a>(
                                 match namespaces {
                                     Ok(namespaces) => {
                                         app.resources.namespaces.namespaces = namespaces;
+                                        app.resources.namespaces.namespaces.sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Namespaces;
                                     }
                                     Err(err) => {
@@ -842,6 +844,7 @@ pub async fn update<'a>(
                                 match subscriptions {
                                     Ok(subscriptions) => {
                                         app.resources.subscriptions.subscriptions = subscriptions;
+                                        app.resources.subscriptions.subscriptions.sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Subscriptions;
                                     }
                                     Err(err) => {
@@ -872,6 +875,7 @@ pub async fn update<'a>(
                                         match topics {
                                             Ok(topics) => {
                                                 app.resources.topics.topics = topics;
+                                                app.resources.topics.topics.sort_by(|a, b| a.name.cmp(&b.name));
                                                 app.resources.listening.search = None;
                                                 app.resources.listening.panel = SelectedPanel::Left;
                                                 app.active_resource = Resource::Topics;
@@ -929,6 +933,7 @@ pub async fn update<'a>(
                                             app.resources.namespaces.cursor,
                                         );
                                         app.resources.namespaces.namespaces = namespaces;
+                                        app.resources.namespaces.namespaces.sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Namespaces;
                                     }
                                     Err(err) => {
@@ -954,6 +959,7 @@ pub async fn update<'a>(
                                         app.resources.topics.cursor =
                                             get_new_cursor(&topics, app.resources.topics.cursor);
                                         app.resources.topics.topics = topics;
+                                        app.resources.topics.topics.sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Topics;
                                     }
                                     Err(err) => {
@@ -986,6 +992,7 @@ pub async fn update<'a>(
                                             app.resources.subscriptions.cursor,
                                         );
                                         app.resources.subscriptions.subscriptions = subscriptions;
+                                        app.resources.subscriptions.subscriptions.sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Subscriptions;
                                     }
                                     Err(err) => {
@@ -1021,6 +1028,7 @@ pub async fn update<'a>(
                                             app.resources.consumers.cursor,
                                         );
                                         app.resources.consumers.consumers = consumers;
+                                        app.resources.consumers.consumers.sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Consumers;
                                     }
                                     Err(err) => {
