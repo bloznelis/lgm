@@ -16,7 +16,7 @@ use crate::update::{
     ConfirmationModal, Consumers, Listening, Namespaces, Subscription, Subscriptions, Tenants,
     Topics,
 };
-use crate::{App, Resource, Side};
+use crate::{App, Resource, SelectedPanel};
 
 struct HeaderLayout {
     info_rect: Rect,
@@ -345,6 +345,25 @@ fn style_backlog_cell(backlog: i64) -> Cell<'static> {
     Cell::new(format!("{}", backlog)).style(style)
 }
 
+fn draw_search(frame: &mut Frame, listening: &Listening, rect: Option<Rect>) {
+    if let (Some(search), Some(rect)) = (listening.search.clone(), rect) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(if matches!(listening.panel, SelectedPanel::Search) {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            })
+            .title("Search".to_string())
+            .title_alignment(Alignment::Center)
+            .title_style(Style::default().fg(Color::Green));
+
+        let paragraph = Paragraph::new(search).block(block);
+
+        frame.render_widget(paragraph, rect);
+    }
+}
+
 fn draw_listening(
     frame: &mut Frame,
     layout: &LayoutChunks,
@@ -353,11 +372,12 @@ fn draw_listening(
 ) {
     let help = vec![
         LabeledItem::help("<esc>", "back"),
-        LabeledItem::help("<tab>", "cycle side"),
+        LabeledItem::help("<tab>", "cycle panels"),
         LabeledItem::help("u", "seek 1h"),
         LabeledItem::help("i", "seek 24h"),
         LabeledItem::help("o", "seek 1 week"),
         LabeledItem::help("y", "copy to clipboard"),
+        LabeledItem::help("/", "toggle search"),
     ];
     draw_help(frame, layout, help);
 
@@ -366,13 +386,24 @@ fn draw_listening(
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(layout.main);
 
-    let left_rect: Rect = chunks[0];
+    let (left_rect, search_rect) = match listening.search {
+        Some(_) => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(3), Constraint::Percentage(100)])
+                .split(chunks[0]);
+
+            (chunks[1], Some(chunks[0]))
+        }
+        None => (chunks[0], None),
+    };
+
     let horizontal_space: usize = (left_rect.width - 10).into();
     let right_rect = chunks[1];
 
     let content_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if matches!(listening.selected_side, Side::Left { .. }) {
+        .border_type(if matches!(listening.panel, SelectedPanel::Left { .. }) {
             BorderType::Double
         } else {
             BorderType::Plain
@@ -382,7 +413,9 @@ fn draw_listening(
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
-    let content_list = List::new(listening.messages.iter().map(|message| {
+    let filtered_messages = listening.filtered_messages.clone();
+
+    let content_list = List::new(filtered_messages.iter().map(|message| {
         if message.body.len() > horizontal_space {
             format!("{}...", &message.body[..horizontal_space])
         } else {
@@ -396,18 +429,18 @@ fn draw_listening(
 
     let message_body = listening
         .cursor
-        .and_then(|cursor| listening.messages.get(cursor))
+        .and_then(|cursor| filtered_messages.get(cursor))
         .and_then(|message| serde_json::from_str::<serde_json::Value>(&message.body).ok())
         .and_then(|body_as_json| serde_json::to_string_pretty(&body_as_json).ok());
 
     let message_properties = listening
         .cursor
-        .and_then(|cursor| listening.messages.get(cursor))
+        .and_then(|cursor| filtered_messages.get(cursor))
         .map(|message| message.properties.join("\n"));
 
     let preview_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if matches!(listening.selected_side, Side::Right { .. }) {
+        .border_type(if matches!(listening.panel, SelectedPanel::Right { .. }) {
             BorderType::Double
         } else {
             BorderType::Plain
@@ -417,23 +450,51 @@ fn draw_listening(
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
-    let preview_content = message_properties.and_then(|properties| {
-        message_body
-            .as_ref()
-            .map(|body| properties + "\n\n" + body)
-    });
+    let content = message_properties
+        .and_then(|properties| {
+            message_body
+                .as_ref()
+                .map(|body| properties + "\n\n" + body)
+        })
+        .unwrap_or(String::from("nothing to show"));
 
-    let scroll_offset = match listening.selected_side {
-        Side::Left => (0, 0),
-        Side::Right { scroll_offset } => (scroll_offset, 0),
+    let text: Vec<Line<'_>> = content
+        .lines()
+        .map(|line| {
+            if let Some(search) = listening.search.clone() {
+                if line.contains(&search) && !search.is_empty() {
+                    if let Some((first_half, second_half)) = line.split_once(&search) {
+                        Line::from(vec![
+                            Span::raw(first_half),
+                            Span::raw(search.clone())
+                                .style(Style::default().fg(Color::Black).bg(Color::Green)),
+                            Span::raw(second_half),
+                        ])
+                    //TODO: Fix this yikes
+                    } else {
+                        Line::from(line)
+                    }
+                } else {
+                    Line::from(line)
+                }
+            } else {
+                Line::from(line)
+            }
+        })
+        .collect();
+
+    let scroll_offset = match listening.panel {
+        SelectedPanel::Left => (0, 0),
+        SelectedPanel::Search => (0, 0),
+        SelectedPanel::Right { scroll_offset } => (scroll_offset, 0),
     };
 
-    let preview_paragraph =
-        Paragraph::new(preview_content.unwrap_or(String::from("nothing to show")))
-            .block(preview_block)
-            .wrap(Wrap { trim: false })
-            .scroll(scroll_offset);
+    let preview_paragraph = Paragraph::new(text)
+        .block(preview_block)
+        .wrap(Wrap { trim: false })
+        .scroll(scroll_offset);
 
+    draw_search(frame, listening, search_rect);
     frame.render_stateful_widget(content_list, left_rect, &mut state);
     frame.render_widget(preview_paragraph, right_rect);
 }

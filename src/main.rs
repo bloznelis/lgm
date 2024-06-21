@@ -24,7 +24,8 @@ use std::{
 };
 use tokio::sync::Mutex;
 use update::{
-    App, ConfirmedCommand, Consumers, Listening, Namespace, Namespaces, PulsarApp, Resource, Resources, Side, Subscriptions, Tenant, Tenants, Topics
+    App, ConfirmedCommand, Consumers, Listening, Namespace, Namespaces, PulsarApp, Resource,
+    Resources, SelectedPanel, Subscriptions, Tenant, Tenants, Topics,
 };
 
 use crossterm::{
@@ -34,7 +35,6 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -43,7 +43,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main(){
+async fn main() {
     let args = Args::parse();
 
     match run(args).await {
@@ -98,9 +98,13 @@ async fn run(args: Args) -> anyhow::Result<()> {
     let (sender, receiver): (Sender<AppEvent>, Receiver<AppEvent>) = channel();
     let control_sender = sender.clone();
     //can we use tokio thread here?
-    let _handle = thread::spawn(move || listen_for_control(control_sender));
+    let _handle = thread::spawn(move || listen_input(control_sender));
     let namespaces: Vec<Namespace> = fetch_namespaces(&default_tenant, &conf).await?;
-    let cluster_name: String = fetch_clusters(&conf).await?.first().cloned().unwrap_or("unknown cluster".to_string());
+    let cluster_name: String = fetch_clusters(&conf)
+        .await?
+        .first()
+        .cloned()
+        .unwrap_or("unknown cluster".to_string());
 
     let mut app = App {
         pulsar: PulsarApp {
@@ -129,16 +133,18 @@ async fn run(args: Args) -> anyhow::Result<()> {
             },
             consumers: Consumers {
                 consumers: vec![],
-                cursor: None
+                cursor: None,
             },
             listening: Listening {
                 messages: vec![],
-                selected_side: Side::Left,
+                filtered_messages: vec![],
+                panel: SelectedPanel::Left,
                 cursor: None,
+                search: None,
             },
         },
         pulsar_admin_cfg: conf,
-        cluster_name
+        cluster_name,
     };
 
     let mut stdout = io::stdout();
@@ -162,7 +168,11 @@ pub enum ControlEvent {
     CycleSide,
     Yank,
     Back,
+    Esc,
+    BackSpace,
+    ClearInput,
     Up,
+    Search,
     Down,
     Terminate,
     Delete,
@@ -179,14 +189,26 @@ pub enum ResetLength {
 }
 
 pub enum AppEvent {
+    Input(KeyCode),
     Control(ControlEvent),
     Command(ConfirmedCommand),
     SubscriptionEvent(TopicEvent),
 }
 
-fn listen_for_control(sender: Sender<AppEvent>) {
+fn listen_input(sender: Sender<AppEvent>) {
     loop {
-        let event = match event::read().unwrap() {
+        let event = event::read().unwrap();
+
+        let input_event = match &event {
+            Event::Key(key) => Some(AppEvent::Input(key.code)),
+            _ => None,
+        };
+
+        if let Some(input_event) = input_event {
+            sender.send(input_event).unwrap()
+        }
+
+        let control_event = match &event {
             Event::Key(key) => match key.code {
                 KeyCode::Char('a') if key.modifiers == KeyModifiers::CONTROL => {
                     Some(AppEvent::Control(ControlEvent::Accept))
@@ -203,6 +225,9 @@ fn listen_for_control(sender: Sender<AppEvent>) {
                 KeyCode::Char('s') if key.modifiers == KeyModifiers::CONTROL => {
                     Some(AppEvent::Control(ControlEvent::Subscribe))
                 }
+                KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
+                    Some(AppEvent::Control(ControlEvent::ClearInput))
+                }
                 KeyCode::Char('u') => Some(AppEvent::Control(ControlEvent::ResetSubscription(
                     ResetLength::OneHour,
                 ))),
@@ -214,20 +239,20 @@ fn listen_for_control(sender: Sender<AppEvent>) {
                 ))),
                 KeyCode::Tab => Some(AppEvent::Control(ControlEvent::CycleSide)),
                 KeyCode::Enter => Some(AppEvent::Control(ControlEvent::Enter)),
-                KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => {
-                    Some(AppEvent::Control(ControlEvent::Back))
-                }
-                KeyCode::Backspace => Some(AppEvent::Control(ControlEvent::Back)),
+                KeyCode::Char('h') | KeyCode::Left => Some(AppEvent::Control(ControlEvent::Back)),
+                KeyCode::Esc => Some(AppEvent::Control(ControlEvent::Esc)),
+                KeyCode::Backspace => Some(AppEvent::Control(ControlEvent::BackSpace)),
                 KeyCode::Char('j') | KeyCode::Down => Some(AppEvent::Control(ControlEvent::Down)),
                 KeyCode::Char('y') => Some(AppEvent::Control(ControlEvent::Yank)),
                 KeyCode::Char('k') | KeyCode::Up => Some(AppEvent::Control(ControlEvent::Up)),
+                KeyCode::Char('/') => Some(AppEvent::Control(ControlEvent::Search)),
                 _ => None,
             },
             _ => None,
         };
 
-        if let Some(event) = event {
-            sender.send(event).unwrap()
+        if let Some(control_event) = control_event {
+            sender.send(control_event).unwrap()
         }
     }
 }
