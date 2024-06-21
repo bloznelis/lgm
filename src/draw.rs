@@ -417,7 +417,7 @@ fn draw_listening(
 
     let content_list = List::new(filtered_messages.iter().map(|message| {
         if message.body.len() > horizontal_space {
-            format!("{}...", &message.body[..horizontal_space])
+            format!("{}...", &message.body.chars().take(horizontal_space).collect::<String>())
         } else {
             message.body.to_string()
         }
