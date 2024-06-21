@@ -3,6 +3,8 @@ use anyhow::anyhow;
 use chrono::TimeDelta;
 use clipboard::{ClipboardContext, ClipboardProvider};
 use core::fmt;
+use crossterm::event::KeyCode;
+use itertools::Itertools;
 use pulsar::{Pulsar, TokioExecutor};
 use pulsar_admin_sdk::apis::configuration::Configuration;
 use std::io::Stdout;
@@ -55,8 +57,33 @@ pub struct Consumers {
 #[derive(Clone)]
 pub struct Listening {
     pub messages: Vec<SubMessage>,
-    pub selected_side: Side,
+    pub filtered_messages: Vec<SubMessage>,
+    pub panel: SelectedPanel,
     pub cursor: Option<usize>,
+    pub search: Option<String>,
+}
+
+impl Listening {
+    pub fn filter_messages(&mut self) {
+        let messages = self.messages.clone();
+        self.filtered_messages = match &self.search {
+            Some(search) => {
+                let search = search.replace(' ', "");
+
+                messages
+                    .into_iter()
+                    .filter(|message| {
+                        message.body.contains(&search)
+                            || message
+                                .properties
+                                .iter()
+                                .any(|prop| prop.contains(&search))
+                    })
+                    .collect_vec()
+            }
+            None => messages,
+        };
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -76,9 +103,10 @@ impl std::fmt::Display for Resource {
 }
 
 #[derive(Debug, Clone)]
-pub enum Side {
+pub enum SelectedPanel {
     Left,
     Right { scroll_offset: u16 },
+    Search,
 }
 
 pub struct InfoToShow {
@@ -196,8 +224,10 @@ impl Resources {
             }
 
             Resource::Listening { .. } => {
-                self.listening.cursor =
-                    cursor_up(self.listening.cursor, self.listening.messages.len())
+                self.listening.cursor = cursor_up(
+                    self.listening.cursor,
+                    self.listening.filtered_messages.len(),
+                )
             }
         }
     }
@@ -228,8 +258,10 @@ impl Resources {
             }
 
             Resource::Listening { .. } => {
-                self.listening.cursor =
-                    cursor_down(self.listening.cursor, self.listening.messages.len())
+                self.listening.cursor = cursor_down(
+                    self.listening.cursor,
+                    self.listening.filtered_messages.len(),
+                )
             }
         }
     }
@@ -342,6 +374,44 @@ pub async fn update<'a>(
             .recv_timeout(Duration::from_millis(100))
         {
             match event {
+                // XXX: Allow only a subset of events if search is enabled
+                AppEvent::Control(control_event)
+                    if matches!(app.resources.listening.panel, SelectedPanel::Search)
+                        && matches!(
+                            control_event,
+                            ControlEvent::Yank
+                                | ControlEvent::Back
+                                | ControlEvent::Up
+                                | ControlEvent::Down
+                                | ControlEvent::Delete
+                                | ControlEvent::ResetSubscription(..)
+                        ) => {}
+                AppEvent::Control(ControlEvent::ClearInput) => {
+                    if matches!(app.resources.listening.panel, SelectedPanel::Search) {
+                        app.resources.listening.search = Some(String::new());
+                    }
+                }
+                AppEvent::Input(input) => {
+                    if matches!(app.resources.listening.panel, SelectedPanel::Search) {
+                        if let Resource::Listening { .. } = &app.active_resource {
+                            let char = match input {
+                                KeyCode::Char(char) if char != '/' => Some(char),
+                                _ => None,
+                            };
+
+                            if let Some(char) = char {
+                                app.resources.listening.search = app
+                                    .resources
+                                    .listening
+                                    .search
+                                    .as_ref()
+                                    .map(|current_search| format!("{}{}", current_search, char));
+                            }
+
+                            app.resources.listening.filter_messages();
+                        }
+                    }
+                }
                 AppEvent::Command(ConfirmedCommand::CloseInfoMessage) => app.info_to_show = None,
                 AppEvent::Command(ConfirmedCommand::SeekSubscription {
                     tenant,
@@ -457,6 +527,35 @@ pub async fn update<'a>(
                 AppEvent::Control(ControlEvent::Refuse) => {
                     app.confirmation_modal = None;
                 }
+                AppEvent::Control(ControlEvent::Search) => {
+                    if let Resource::Listening { .. } = &mut app.active_resource {
+                        match &app.resources.listening.panel {
+                            SelectedPanel::Left => match &app.resources.listening.search {
+                                Some(_) => app.resources.listening.panel = SelectedPanel::Search,
+                                None => {
+                                    app.resources.listening.panel = SelectedPanel::Search;
+                                    app.resources.listening.search = Some(String::new());
+                                }
+                            },
+                            SelectedPanel::Right { .. } => match &app.resources.listening.search {
+                                Some(_) => app.resources.listening.panel = SelectedPanel::Search,
+                                None => {
+                                    app.resources.listening.panel = SelectedPanel::Search;
+                                    app.resources.listening.search = Some(String::new());
+                                }
+                            },
+                            SelectedPanel::Search => match &app.resources.listening.search {
+                                Some(_) => {
+                                    app.resources.listening.panel = SelectedPanel::Left;
+                                    app.resources.listening.search = None
+                                }
+                                None => {
+                                    app.resources.listening.search = Some(String::new());
+                                }
+                            },
+                        }
+                    }
+                }
                 AppEvent::Control(ControlEvent::Delete) => {
                     if let Resource::Subscriptions = &mut app.active_resource {
                         if let Some(subscription) = app.resources.selected_subscription() {
@@ -519,8 +618,8 @@ pub async fn update<'a>(
                             show_error_msg(app, err.to_string());
                         } else {
                             show_info_msg(app, "Seeked successfully.");
-                        }
-                    };
+                        };
+                    }
                     if let Resource::Subscriptions = &app.active_resource {
                         if let Some(subscription) = app.resources.selected_subscription() {
                             let (time_delta, time_str) = match length {
@@ -566,11 +665,17 @@ pub async fn update<'a>(
                 }
                 AppEvent::Control(ControlEvent::CycleSide) => {
                     if let Resource::Listening { .. } = &app.active_resource {
-                        app.resources.listening.selected_side =
-                            match &app.resources.listening.selected_side {
-                                Side::Left => Side::Right { scroll_offset: 0 },
-                                Side::Right { .. } => Side::Left,
-                            };
+                        app.resources.listening.panel = match &app.resources.listening.panel {
+                            SelectedPanel::Search => SelectedPanel::Left,
+                            SelectedPanel::Left => SelectedPanel::Right { scroll_offset: 0 },
+                            SelectedPanel::Right { .. } => {
+                                if app.resources.listening.search.is_some() {
+                                    SelectedPanel::Search
+                                } else {
+                                    SelectedPanel::Left
+                                }
+                            }
+                        };
                     }
                 }
                 AppEvent::Control(ControlEvent::Yank) => {
@@ -599,6 +704,8 @@ pub async fn update<'a>(
                                 Resource::Listening { sub_name: sub_name.clone() };
                             app.resources.listening.cursor = None;
                             app.resources.listening.messages = vec![];
+                            app.resources.listening.filtered_messages = vec![];
+                            app.resources.listening.search = None;
                             let new_pulsar = app.pulsar.client.clone();
                             let new_sender = app.pulsar.sender.clone();
                             let (tx, rx) = oneshot::channel::<()>();
@@ -619,8 +726,8 @@ pub async fn update<'a>(
 
                 AppEvent::Control(ControlEvent::Up) => {
                     app.confirmation_modal = None;
-                    if let Side::Right { scroll_offset } =
-                        &mut app.resources.listening.selected_side
+                    if let SelectedPanel::Right { scroll_offset } =
+                        &mut app.resources.listening.panel
                     {
                         *scroll_offset = scroll_offset.saturating_sub(1)
                     } else {
@@ -630,8 +737,8 @@ pub async fn update<'a>(
 
                 AppEvent::Control(ControlEvent::Down) => {
                     app.confirmation_modal = None;
-                    if let Side::Right { scroll_offset } =
-                        &mut app.resources.listening.selected_side
+                    if let SelectedPanel::Right { scroll_offset } =
+                        &mut app.resources.listening.panel
                     {
                         *scroll_offset = scroll_offset.saturating_add(1)
                     } else {
@@ -639,7 +746,26 @@ pub async fn update<'a>(
                     }
                 }
 
-                AppEvent::Control(ControlEvent::Back) => {
+                AppEvent::Control(ControlEvent::BackSpace) => {
+                    if let Resource::Listening { .. } = &app.active_resource {
+                        if matches!(app.resources.listening.panel, SelectedPanel::Search) {
+                            app.resources.listening.search = match &app.resources.listening.search {
+                                Some(current_search) => {
+                                    let len = current_search.len();
+                                    if len > 0 {
+                                        Some(current_search[0..len - 1].to_owned())
+                                    } else {
+                                        Some("".to_string())
+                                    }
+                                }
+                                None => None,
+                            };
+                            app.resources.listening.filter_messages();
+                        }
+                    }
+                }
+
+                AppEvent::Control(ControlEvent::Back | ControlEvent::Esc) => {
                     if app.confirmation_modal.is_some() {
                         app.confirmation_modal = None;
                     } else {
@@ -728,30 +854,44 @@ pub async fn update<'a>(
                             }
 
                             Resource::Listening { .. } => {
-                                let topics = pulsar_admin::fetch_topics(
-                                    &app.resources.selected_tenant().unwrap().name,
-                                    &app.resources.selected_namespace().unwrap().name,
-                                    &app.pulsar_admin_cfg,
-                                )
-                                .await;
+                                match &app.resources.listening.panel {
+                                    SelectedPanel::Search => {
+                                        app.resources.listening.panel = SelectedPanel::Left;
+                                        app.resources.listening.search = None;
+                                        app.resources.listening.filtered_messages =
+                                            app.resources.listening.messages.clone();
+                                    }
+                                    _ => {
+                                        let topics = pulsar_admin::fetch_topics(
+                                            &app.resources.selected_tenant().unwrap().name,
+                                            &app.resources.selected_namespace().unwrap().name,
+                                            &app.pulsar_admin_cfg,
+                                        )
+                                        .await;
 
-                                match topics {
-                                    Ok(topics) => {
-                                        app.resources.topics.topics = topics;
-                                        app.active_resource = Resource::Topics;
+                                        match topics {
+                                            Ok(topics) => {
+                                                app.resources.topics.topics = topics;
+                                                app.resources.listening.search = None;
+                                                app.resources.listening.panel = SelectedPanel::Left;
+                                                app.active_resource = Resource::Topics;
 
-                                        if let Some(sender) = app.pulsar.active_sub_handle.take() {
-                                            sender.send(()).map_err(|()| { anyhow!( "Failed to send termination singal to subscription")
+                                                if let Some(sender) =
+                                                    app.pulsar.active_sub_handle.take()
+                                                {
+                                                    sender.send(()).map_err(|()| { anyhow!( "Failed to send termination singal to subscription")
                                                 })?
-                                        };
+                                                };
+                                            }
+                                            Err(err) => {
+                                                show_error_msg(
+                                                    app,
+                                                    format!("Failed to fetch topics :[ {:?}", err),
+                                                );
+                                            }
+                                        }
                                     }
-                                    Err(err) => {
-                                        show_error_msg(
-                                            app,
-                                            format!("Failed to fetch topics :[ {:?}", err),
-                                        );
-                                    }
-                                }
+                                };
                             }
                         }
                     }
@@ -762,6 +902,9 @@ pub async fn update<'a>(
                             body: serde_json::to_string(&event.body)?,
                             properties: event.properties,
                         });
+
+                        app.resources.listening.filter_messages();
+
                         if app.resources.listening.cursor.is_none() {
                             app.resources.listening.cursor = Some(0)
                         }
@@ -889,8 +1032,12 @@ pub async fn update<'a>(
                                 }
                             }
                         }
+                        Resource::Listening { .. } => {
+                            if let SelectedPanel::Search = &app.resources.listening.panel {
+                                app.resources.listening.panel = SelectedPanel::Left
+                            }
+                        }
                         Resource::Consumers => {}
-                        Resource::Listening { .. } => {}
                     }
                 }
             }
