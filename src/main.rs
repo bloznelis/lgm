@@ -177,6 +177,7 @@ pub enum ControlEvent {
     Terminate,
     Delete,
     Subscribe,
+    Skip,
     Accept,
     Refuse,
     ResetSubscription(ResetLength),
@@ -224,6 +225,9 @@ fn listen_input(sender: Sender<AppEvent>) {
                 }
                 KeyCode::Char('s') if key.modifiers == KeyModifiers::CONTROL => {
                     Some(AppEvent::Control(ControlEvent::Subscribe))
+                }
+                KeyCode::Char('p') if key.modifiers == KeyModifiers::CONTROL => {
+                    Some(AppEvent::Control(ControlEvent::Skip))
                 }
                 KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
                     Some(AppEvent::Control(ControlEvent::ClearInput))

@@ -175,6 +175,13 @@ pub enum ConfirmedCommand {
         sub_name: String,
         cfg: Configuration,
     },
+    SkipAllMessages {
+        tenant: String,
+        namespace: String,
+        topic: String,
+        sub_name: String,
+        cfg: Configuration,
+    },
     SeekSubscription {
         tenant: String,
         namespace: String,
@@ -386,6 +393,7 @@ pub async fn update<'a>(
                                 | ControlEvent::Delete
                                 | ControlEvent::ResetSubscription(..)
                         ) => {}
+
                 AppEvent::Control(ControlEvent::ClearInput) => {
                     if matches!(app.resources.listening.panel, SelectedPanel::Search) {
                         app.resources.listening.search = Some(String::new());
@@ -412,7 +420,85 @@ pub async fn update<'a>(
                         }
                     }
                 }
+
+                AppEvent::Control(ControlEvent::Skip) => {
+                    if let (Resource::Subscriptions, Some(subscription)) = (
+                        &mut app.active_resource,
+                        app.resources.selected_subscription(),
+                    ) {
+                        app.confirmation_modal = Some(ConfirmationModal {
+                            message: format!("Skip all '{}' messages?", subscription.name),
+                            command: ConfirmedCommand::SkipAllMessages {
+                                tenant: app
+                                    .resources
+                                    .selected_tenant_name()
+                                    .expect("tenant must be set")
+                                    .to_string(),
+                                namespace: app
+                                    .resources
+                                    .selected_namespace_name()
+                                    .expect("namespace must be set")
+                                    .to_string(),
+                                topic: app
+                                    .resources
+                                    .selected_topic_name()
+                                    .expect("namespace must be set")
+                                    .to_string(),
+                                sub_name: subscription.name.clone(),
+                                cfg: app.pulsar_admin_cfg.clone(),
+                            },
+                        })
+                    }
+                }
+
                 AppEvent::Command(ConfirmedCommand::CloseInfoMessage) => app.info_to_show = None,
+                AppEvent::Command(ConfirmedCommand::SkipAllMessages {
+                    tenant,
+                    namespace,
+                    topic,
+                    sub_name,
+                    cfg,
+                }) => {
+                    let result = pulsar_admin::skip_all_messages(
+                        &tenant, &namespace, &topic, &sub_name, &cfg,
+                    )
+                    .await;
+
+                    app.confirmation_modal = None;
+
+                    if let Err(err) = result {
+                        app.info_to_show = Some(InfoToShow::error(err.to_string()))
+                    }
+
+                    refresh_subscriptions(app).await;
+                    show_info_msg(app, "All messages skipped successfully.");
+                }
+                AppEvent::Command(ConfirmedCommand::DeleteSubscription {
+                    tenant,
+                    namespace,
+                    topic,
+                    sub_name,
+                    cfg,
+                }) => {
+                    match pulsar_admin::delete_subscription(
+                        &tenant, &namespace, &topic, &sub_name, &cfg,
+                    )
+                    .await
+                    {
+                        Ok(_) => {
+                            refresh_subscriptions(app).await;
+                            show_info_msg(app, "Subscription deleted.");
+                        }
+                        Err(err) => {
+                            show_error_msg(
+                                app,
+                                format!("Failed to delete subscription :[ {:?}", err),
+                            );
+                        }
+                    }
+
+                    app.confirmation_modal = None;
+                }
                 AppEvent::Command(ConfirmedCommand::SeekSubscription {
                     tenant,
                     namespace,
@@ -431,91 +517,8 @@ pub async fn update<'a>(
                         app.info_to_show = Some(InfoToShow::error(err.to_string()))
                     }
 
-                    //TODO: this is getting duplicated, move out to refresh_subscriptions function
-                    let subscriptions = pulsar_admin::fetch_subs(
-                        app.resources
-                            .selected_tenant_name()
-                            .expect("tenant must be set"),
-                        app.resources
-                            .selected_namespace_name()
-                            .expect("namespace must be set"),
-                        app.resources
-                            .selected_topic_name()
-                            .expect("namespace must be set"),
-                        &app.pulsar_admin_cfg,
-                    )
-                    .await;
-
-                    match subscriptions {
-                        Ok(subscriptions) => {
-                            app.resources.subscriptions.subscriptions = subscriptions;
-                            app.active_resource = Resource::Subscriptions;
-
-                            show_info_msg(app, "Seeked successfully.");
-                        }
-                        Err(err) => {
-                            show_error_msg(
-                                app,
-                                format!("Failed to fetch subscriptions :[ {:?}", err),
-                            );
-                        }
-                    }
-                }
-                AppEvent::Command(ConfirmedCommand::DeleteSubscription {
-                    tenant,
-                    namespace,
-                    topic,
-                    sub_name,
-                    cfg,
-                }) => {
-                    match pulsar_admin::delete_subscription(
-                        &tenant, &namespace, &topic, &sub_name, &cfg,
-                    )
-                    .await
-                    {
-                        Ok(_) => {
-                            let subscriptions = pulsar_admin::fetch_subs(
-                                app.resources
-                                    .selected_tenant_name()
-                                    .expect("tenant must be set"),
-                                app.resources
-                                    .selected_namespace_name()
-                                    .expect("namespace must be set"),
-                                app.resources
-                                    .selected_topic_name()
-                                    .expect("namespace must be set"),
-                                &app.pulsar_admin_cfg,
-                            )
-                            .await;
-
-                            match subscriptions {
-                                Ok(subscriptions) => {
-                                    if !subscriptions.is_empty() {
-                                        app.resources.subscriptions.cursor = Some(0);
-                                    } else {
-                                        app.resources.subscriptions.cursor = None;
-                                    };
-                                    app.active_resource = Resource::Subscriptions;
-
-                                    show_info_msg(app, "Subscription deleted.");
-                                }
-                                Err(err) => {
-                                    show_error_msg(
-                                        app,
-                                        format!("Failed to fetch subscriptions :[ {:?}", err),
-                                    );
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            show_error_msg(
-                                app,
-                                format!("Failed to delete subscription :[ {:?}", err),
-                            );
-                        }
-                    }
-
-                    app.confirmation_modal = None;
+                    refresh_subscriptions(app).await;
+                    show_info_msg(app, "Seeked successfully.");
                 }
                 AppEvent::Control(ControlEvent::Accept) => {
                     if let Some(confirmation) = app.confirmation_modal.take() {
@@ -777,7 +780,10 @@ pub async fn update<'a>(
                                 match tenants {
                                     Ok(tenants) => {
                                         app.resources.tenants.tenants = tenants;
-                                        app.resources.tenants.tenants.sort_by(|a, b| a.name.cmp(&b.name));
+                                        app.resources
+                                            .tenants
+                                            .tenants
+                                            .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Tenants;
                                     }
                                     Err(err) => {
@@ -798,7 +804,10 @@ pub async fn update<'a>(
                                 match namespaces {
                                     Ok(namespaces) => {
                                         app.resources.namespaces.namespaces = namespaces;
-                                        app.resources.namespaces.namespaces.sort_by(|a, b| a.name.cmp(&b.name));
+                                        app.resources
+                                            .namespaces
+                                            .namespaces
+                                            .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Namespaces;
                                     }
                                     Err(err) => {
@@ -844,7 +853,10 @@ pub async fn update<'a>(
                                 match subscriptions {
                                     Ok(subscriptions) => {
                                         app.resources.subscriptions.subscriptions = subscriptions;
-                                        app.resources.subscriptions.subscriptions.sort_by(|a, b| a.name.cmp(&b.name));
+                                        app.resources
+                                            .subscriptions
+                                            .subscriptions
+                                            .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Subscriptions;
                                     }
                                     Err(err) => {
@@ -875,7 +887,10 @@ pub async fn update<'a>(
                                         match topics {
                                             Ok(topics) => {
                                                 app.resources.topics.topics = topics;
-                                                app.resources.topics.topics.sort_by(|a, b| a.name.cmp(&b.name));
+                                                app.resources
+                                                    .topics
+                                                    .topics
+                                                    .sort_by(|a, b| a.name.cmp(&b.name));
                                                 app.resources.listening.search = None;
                                                 app.resources.listening.panel = SelectedPanel::Left;
                                                 app.active_resource = Resource::Topics;
@@ -933,7 +948,10 @@ pub async fn update<'a>(
                                             app.resources.namespaces.cursor,
                                         );
                                         app.resources.namespaces.namespaces = namespaces;
-                                        app.resources.namespaces.namespaces.sort_by(|a, b| a.name.cmp(&b.name));
+                                        app.resources
+                                            .namespaces
+                                            .namespaces
+                                            .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Namespaces;
                                     }
                                     Err(err) => {
@@ -959,7 +977,10 @@ pub async fn update<'a>(
                                         app.resources.topics.cursor =
                                             get_new_cursor(&topics, app.resources.topics.cursor);
                                         app.resources.topics.topics = topics;
-                                        app.resources.topics.topics.sort_by(|a, b| a.name.cmp(&b.name));
+                                        app.resources
+                                            .topics
+                                            .topics
+                                            .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Topics;
                                     }
                                     Err(err) => {
@@ -972,36 +993,8 @@ pub async fn update<'a>(
                             }
                         }
                         Resource::Topics => {
-                            if let Some(topic) = app.resources.selected_topic() {
-                                let subscriptions = pulsar_admin::fetch_subs(
-                                    app.resources
-                                        .selected_tenant_name()
-                                        .expect("tenant must be set"),
-                                    app.resources
-                                        .selected_namespace_name()
-                                        .expect("namespace must be set"),
-                                    &topic.name,
-                                    &app.pulsar_admin_cfg,
-                                )
-                                .await;
-
-                                match subscriptions {
-                                    Ok(subscriptions) => {
-                                        app.resources.subscriptions.cursor = get_new_cursor(
-                                            &subscriptions,
-                                            app.resources.subscriptions.cursor,
-                                        );
-                                        app.resources.subscriptions.subscriptions = subscriptions;
-                                        app.resources.subscriptions.subscriptions.sort_by(|a, b| a.name.cmp(&b.name));
-                                        app.active_resource = Resource::Subscriptions;
-                                    }
-                                    Err(err) => {
-                                        show_error_msg(
-                                            app,
-                                            format!("Failed to fetch subscriptions :[ {:?}", err),
-                                        );
-                                    }
-                                }
+                            if let Some(_) = app.resources.selected_topic() {
+                                refresh_subscriptions(app).await;
                             }
                         }
                         Resource::Subscriptions { .. } => {
@@ -1028,7 +1021,10 @@ pub async fn update<'a>(
                                             app.resources.consumers.cursor,
                                         );
                                         app.resources.consumers.consumers = consumers;
-                                        app.resources.consumers.consumers.sort_by(|a, b| a.name.cmp(&b.name));
+                                        app.resources
+                                            .consumers
+                                            .consumers
+                                            .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Consumers;
                                     }
                                     Err(err) => {
@@ -1068,6 +1064,38 @@ fn get_new_cursor<A>(col: &[A], old_cursor: Option<usize>) -> Option<usize> {
                 }
             }
             None => Some(0),
+        }
+    }
+}
+
+async fn refresh_subscriptions(app: &mut App) {
+    let subscriptions = pulsar_admin::fetch_subs(
+        app.resources
+            .selected_tenant_name()
+            .expect("tenant must be set"),
+        app.resources
+            .selected_namespace_name()
+            .expect("namespace must be set"),
+        app.resources
+            .selected_topic_name()
+            .expect("namespace must be set"),
+        &app.pulsar_admin_cfg,
+    )
+    .await;
+
+    match subscriptions {
+        Ok(subscriptions) => {
+            app.resources.subscriptions.cursor =
+                get_new_cursor(&subscriptions, app.resources.subscriptions.cursor);
+            app.resources.subscriptions.subscriptions = subscriptions;
+            app.resources
+                .subscriptions
+                .subscriptions
+                .sort_by(|a, b| a.name.cmp(&b.name));
+            app.active_resource = Resource::Subscriptions;
+        }
+        Err(err) => {
+            show_error_msg(app, format!("Failed to fetch subscriptions :[ {:?}", err));
         }
     }
 }

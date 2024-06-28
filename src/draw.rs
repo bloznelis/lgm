@@ -237,6 +237,7 @@ fn draw_subscriptions(
         LabeledItem::help("<esc>", "back"),
         LabeledItem::help("<enter>", "consumers"),
         LabeledItem::help("<c-d>", "delete"),
+        LabeledItem::help("<c-p>", "skip backlog"),
         LabeledItem::help("u", "seek 1h"),
         LabeledItem::help("i", "seek 24h"),
         LabeledItem::help("o", "seek 1 week"),
@@ -417,7 +418,14 @@ fn draw_listening(
 
     let content_list = List::new(filtered_messages.iter().map(|message| {
         if message.body.len() > horizontal_space {
-            format!("{}...", &message.body.chars().take(horizontal_space).collect::<String>())
+            format!(
+                "{}...",
+                &message
+                    .body
+                    .chars()
+                    .take(horizontal_space)
+                    .collect::<String>()
+            )
         } else {
             message.body.to_string()
         }
