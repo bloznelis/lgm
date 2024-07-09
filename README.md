@@ -19,3 +19,4 @@ Head over to the [releases](https://github.com/bloznelis/lgm/releases) and grab 
 * To show topic stats, we have to fetch them one-by-one. This seems to be annoying to do in std Rust, so look into Tokio streams.
 * Auto refresh
 * Search-like filter for all the resources
+* When search reduces messages out of cursor bounds, we need to reset or snap a cursor.
