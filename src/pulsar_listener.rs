@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::panic;
 use std::sync::{mpsc::Sender, Arc};
-use tokio::sync::Mutex;
 
 use crate::AppEvent;
 
@@ -37,12 +36,10 @@ pub async fn listen_to_topic(
     sub_name: String,
     topic_fqn: String,
     event_sender: Sender<AppEvent>,
-    pulsar: Arc<Mutex<Pulsar<TokioExecutor>>>,
+    pulsar: Arc<Pulsar<TokioExecutor>>,
     mut control_channel: tokio::sync::oneshot::Receiver<()>,
 ) -> anyhow::Result<()> {
     let mut consumer: Consumer<TopicEvent, TokioExecutor> = pulsar
-        .lock()
-        .await
         .consumer()
         .with_options(
             pulsar::ConsumerOptions::default()

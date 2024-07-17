@@ -22,7 +22,6 @@ use std::{
     },
     thread,
 };
-use tokio::sync::Mutex;
 use update::{
     App, ConfirmedCommand, Consumers, Listening, Namespace, Namespaces, PulsarApp, Resource,
     Resources, SelectedPanel, Subscriptions, Tenant, Tenants, Topics,
@@ -83,7 +82,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
     };
 
     let pulsar = builder.build().await?;
-    let pulsar = Arc::new(Mutex::new(pulsar));
+    let pulsar = Arc::new(pulsar);
 
     let default_tenant = config.default_tenant.clone();
 

@@ -16,7 +16,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -387,7 +387,7 @@ impl From<&mut App> for DrawState {
 
 pub struct PulsarApp {
     pub sender: Sender<AppEvent>,
-    pub client: Arc<Mutex<Pulsar<TokioExecutor>>>,
+    pub client: Arc<Pulsar<TokioExecutor>>,
     pub token: Token,
     pub active_sub_handle: Option<tokio::sync::oneshot::Sender<()>>,
 }
