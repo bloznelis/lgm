@@ -12,11 +12,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::update::{
-    ConfirmationModal, Consumers, Listening, Namespaces, Subscription, Subscriptions, Tenants,
-    Topics,
-};
-use crate::{App, Resource, SelectedPanel};
+use crate::update::{ConfirmationModal, DrawState, Listening, Subscription, Tenants};
+use crate::{Resource, SelectedPanel};
 
 struct HeaderLayout {
     info_rect: Rect,
@@ -30,74 +27,29 @@ struct LayoutChunks {
     main: Rect,
 }
 
-pub fn draw_new(frame: &mut Frame, app: &App) {
-    let layout = &make_layout(frame, app);
+pub fn draw(frame: &mut Frame, draw_state: DrawState) {
+    let layout = &make_layout(frame, &draw_state);
     draw_logo(frame, layout);
-    draw_notification(frame, app, layout);
+    draw_notification(frame, &draw_state, layout);
     draw_info(
         frame,
         layout,
         Info {
-            cluster_name: LabeledItem::info("cluster:", &app.cluster_name),
+            cluster_name: LabeledItem::info("cluster:", &draw_state.cluster_name),
         },
     );
 
-    match &app.active_resource {
-        Resource::Tenants => draw_tenants(frame, layout, &app.resources.tenants),
-
-        Resource::Namespaces => draw_namespaces(
-            frame,
-            layout,
-            app.resources
-                .selected_tenant()
-                .map(|tenant| tenant.name.clone())
-                .unwrap_or("".to_string()),
-            &app.resources.namespaces,
-        ),
-
-        Resource::Topics => draw_topics(
-            frame,
-            layout,
-            app.resources
-                .selected_namespace()
-                .map(|tenant| tenant.name.clone())
-                .unwrap_or("".to_string()),
-            &app.resources.topics,
-        ),
-
-        Resource::Subscriptions => draw_subscriptions(
-            frame,
-            layout,
-            app.resources
-                .selected_topic()
-                .map(|tenant| tenant.name.clone())
-                .unwrap_or("".to_string()),
-            &app.resources.subscriptions,
-        ),
-
-        Resource::Consumers => draw_consumers(
-            frame,
-            layout,
-            app.resources
-                .selected_subscription()
-                .map(|sub| sub.name.clone())
-                .unwrap_or("".to_string()),
-            &app.resources.consumers,
-        ),
-
-        Resource::Listening { .. } => draw_listening(
-            frame,
-            layout,
-            &app.resources.listening,
-            app.resources
-                .selected_topic()
-                .map(|topic| topic.name.clone())
-                .unwrap_or("".to_string()),
-        ),
+    if let Some(modal) = draw_state.confirmation_modal.as_ref() {
+        draw_confirmation_modal(frame, modal)
     }
 
-    if let Some(modal) = app.confirmation_modal.as_ref() {
-        draw_confirmation_modal(frame, modal)
+    match &draw_state.active_resource {
+        Resource::Tenants => draw_tenants(frame, layout, draw_state.resources.tenants),
+        Resource::Namespaces => draw_namespaces(frame, layout, draw_state),
+        Resource::Topics => draw_topics(frame, layout, draw_state),
+        Resource::Subscriptions => draw_subscriptions(frame, layout, draw_state),
+        Resource::Consumers => draw_consumers(frame, layout, draw_state),
+        Resource::Listening { .. } => draw_listening(frame, layout, draw_state),
     }
 }
 
@@ -137,7 +89,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     .split(popup_layout[1])[1]
 }
 
-fn draw_tenants(frame: &mut Frame, layout: &LayoutChunks, tenants: &Tenants) {
+fn draw_tenants(frame: &mut Frame, layout: &LayoutChunks, tenants: Tenants) {
     let tenants_help = vec![LabeledItem::help("<enter>", "namespaces")];
     draw_help(frame, layout, tenants_help);
 
@@ -163,17 +115,19 @@ fn draw_tenants(frame: &mut Frame, layout: &LayoutChunks, tenants: &Tenants) {
     frame.render_stateful_widget(content_list, layout.main, &mut state);
 }
 
-fn draw_namespaces(
-    frame: &mut Frame,
-    layout: &LayoutChunks,
-    tenant: String,
-    namespaces: &Namespaces,
-) {
+fn draw_namespaces(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawState) {
     let help = vec![
         LabeledItem::help("<esc>", "back"),
         LabeledItem::help("<enter>", "topics"),
     ];
     draw_help(frame, layout, help);
+
+    let empty_string = String::new();
+    let tenant = draw_state
+        .resources
+        .selected_tenant()
+        .map(|tenant| &tenant.name)
+        .unwrap_or(&empty_string);
 
     let content_block = Block::default()
         .borders(Borders::ALL)
@@ -183,6 +137,7 @@ fn draw_namespaces(
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
+    let namespaces = draw_state.resources.namespaces;
     let content_list = List::new(
         namespaces
             .namespaces
@@ -197,13 +152,20 @@ fn draw_namespaces(
     frame.render_stateful_widget(content_list, layout.main, &mut state);
 }
 
-fn draw_topics(frame: &mut Frame, layout: &LayoutChunks, namespace: String, topics: &Topics) {
+fn draw_topics(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawState) {
     let help = vec![
         LabeledItem::help("<esc>", "back"),
         LabeledItem::help("<enter>", "subs"),
         LabeledItem::help("<c-s>", "listen"),
     ];
     draw_help(frame, layout, help);
+
+    let empty_string = String::new();
+    let namespace = draw_state
+        .resources
+        .selected_namespace()
+        .map(|tenant| &tenant.name)
+        .unwrap_or(&empty_string);
 
     let content_block = Block::default()
         .borders(Borders::ALL)
@@ -213,6 +175,7 @@ fn draw_topics(frame: &mut Frame, layout: &LayoutChunks, namespace: String, topi
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
 
+    let topics = draw_state.resources.topics;
     let content_list = List::new(
         topics
             .topics
@@ -227,12 +190,7 @@ fn draw_topics(frame: &mut Frame, layout: &LayoutChunks, namespace: String, topi
     frame.render_stateful_widget(content_list, layout.main, &mut state);
 }
 
-fn draw_subscriptions(
-    frame: &mut Frame,
-    layout: &LayoutChunks,
-    topic: String,
-    subscriptions: &Subscriptions,
-) {
+fn draw_subscriptions(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawState) {
     let help = vec![
         LabeledItem::help("<esc>", "back"),
         LabeledItem::help("<enter>", "consumers"),
@@ -244,10 +202,17 @@ fn draw_subscriptions(
     ];
     draw_help(frame, layout, help);
 
+    let empty_string = String::new();
+    let topic_name = draw_state
+        .resources
+        .selected_subscription()
+        .map(|topic| &topic.name)
+        .unwrap_or(&empty_string);
+
     let content_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
-        .title(format!("Subscriptions of {}", topic))
+        .title(format!("Subscriptions of {}", topic_name))
         .title_alignment(Alignment::Center)
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
@@ -258,6 +223,8 @@ fn draw_subscriptions(
         Constraint::Ratio(1, 4),
         Constraint::Ratio(1, 4),
     ];
+
+    let subscriptions = draw_state.resources.subscriptions;
 
     let table = Table::new(
         subscriptions.subscriptions.iter().map(|sub| {
@@ -284,19 +251,21 @@ fn draw_subscriptions(
     frame.render_stateful_widget(table, layout.main, &mut state);
 }
 
-fn draw_consumers(
-    frame: &mut Frame,
-    layout: &LayoutChunks,
-    subscription: String,
-    consumers: &Consumers,
-) {
+fn draw_consumers(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawState) {
     let help = vec![LabeledItem::help("<esc>", "back")];
     draw_help(frame, layout, help);
+
+    let empty_string = String::new();
+    let sub_name = draw_state
+        .resources
+        .selected_subscription()
+        .map(|sub| &sub.name)
+        .unwrap_or(&empty_string);
 
     let content_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
-        .title(format!("Consumers of {subscription}"))
+        .title(format!("Consumers of {sub_name}"))
         .title_alignment(Alignment::Center)
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
@@ -306,6 +275,8 @@ fn draw_consumers(
         Constraint::Ratio(1, 3),
         Constraint::Ratio(1, 3),
     ];
+
+    let consumers = draw_state.resources.consumers;
 
     let table = Table::new(
         consumers
@@ -346,7 +317,7 @@ fn style_backlog_cell(backlog: i64) -> Cell<'static> {
     Cell::new(format!("{}", backlog)).style(style)
 }
 
-fn draw_search(frame: &mut Frame, listening: &Listening, rect: Option<Rect>) {
+fn draw_search(frame: &mut Frame, listening: Listening, rect: Option<Rect>) {
     if let (Some(search), Some(rect)) = (listening.search.clone(), rect) {
         let block = Block::default()
             .borders(Borders::ALL)
@@ -365,12 +336,7 @@ fn draw_search(frame: &mut Frame, listening: &Listening, rect: Option<Rect>) {
     }
 }
 
-fn draw_listening(
-    frame: &mut Frame,
-    layout: &LayoutChunks,
-    listening: &Listening,
-    topic_name: String,
-) {
+fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawState) {
     let help = vec![
         LabeledItem::help("<esc>", "back"),
         LabeledItem::help("<tab>", "cycle panels"),
@@ -387,7 +353,33 @@ fn draw_listening(
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(layout.main);
 
-    let (left_rect, search_rect) = match listening.search {
+    let empty_string = String::new();
+    let topic_name = &draw_state
+        .resources
+        .selected_topic()
+        .map(|topic| &topic.name)
+        .unwrap_or(&empty_string);
+
+    let content_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(
+            if matches!(
+                &draw_state.resources.listening.panel,
+                SelectedPanel::Left { .. }
+            ) {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            },
+        )
+        .title(format!("Messages of {topic_name}"))
+        .title_alignment(Alignment::Center)
+        .title_style(Style::default().fg(Color::Green))
+        .padding(Padding::new(2, 2, 1, 1));
+
+    let listening = draw_state.resources.listening;
+
+    let (left_rect, search_rect) = match &listening.search {
         Some(_) => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -402,19 +394,7 @@ fn draw_listening(
     let horizontal_space: usize = (left_rect.width - 10).into();
     let right_rect = chunks[1];
 
-    let content_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(if matches!(listening.panel, SelectedPanel::Left { .. }) {
-            BorderType::Double
-        } else {
-            BorderType::Plain
-        })
-        .title(format!("Messages of {topic_name}"))
-        .title_alignment(Alignment::Center)
-        .title_style(Style::default().fg(Color::Green))
-        .padding(Padding::new(2, 2, 1, 1));
-
-    let filtered_messages = listening.filtered_messages.clone();
+    let filtered_messages = &listening.filtered_messages;
 
     let content_list = List::new(filtered_messages.iter().map(|message| {
         if message.body.len() > horizontal_space {
@@ -507,8 +487,8 @@ fn draw_listening(
     frame.render_widget(preview_paragraph, right_rect);
 }
 
-fn make_layout(frame: &mut Frame, app: &App) -> LayoutChunks {
-    match app.info_to_show {
+fn make_layout(frame: &mut Frame, draw_state: &DrawState) -> LayoutChunks {
+    match draw_state.info_to_show {
         Some(_) => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -611,8 +591,12 @@ fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<LabeledIt
         .for_each(|(i, p)| frame.render_widget(p, layout.header.help_rects[i]));
 }
 
-fn draw_notification(frame: &mut Frame, app: &App, layout: &LayoutChunks) {
-    if let Some((info, rect)) = app.info_to_show.as_ref().zip(layout.message) {
+fn draw_notification(frame: &mut Frame, draw_state: &DrawState, layout: &LayoutChunks) {
+    if let Some((info, rect)) = draw_state
+        .info_to_show
+        .as_ref()
+        .zip(layout.message)
+    {
         let block = Block::default()
             .borders(Borders::NONE)
             .padding(Padding::horizontal(1));

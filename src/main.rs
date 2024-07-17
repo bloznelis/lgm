@@ -108,7 +108,6 @@ async fn run(args: Args) -> anyhow::Result<()> {
 
     let mut app = App {
         pulsar: PulsarApp {
-            receiver,
             sender,
             client: pulsar,
             token,
@@ -145,6 +144,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
         },
         pulsar_admin_cfg: conf,
         cluster_name,
+        receiver,
     };
 
     let mut stdout = io::stdout();

@@ -109,6 +109,7 @@ pub enum SelectedPanel {
     Search,
 }
 
+#[derive(Clone)]
 pub struct InfoToShow {
     pub message: String,
     pub is_error: bool,
@@ -161,11 +162,13 @@ pub struct SubMessage {
     pub properties: Vec<String>,
 }
 
+#[derive(Clone, Debug)]
 pub struct ConfirmationModal {
     pub message: String,
     pub command: ConfirmedCommand,
 }
 
+#[derive(Clone, Debug)]
 pub enum ConfirmedCommand {
     CloseInfoMessage,
     DeleteSubscription {
@@ -353,6 +356,7 @@ fn cursor_down(current: Option<usize>, col_size: usize) -> Option<usize> {
 
 pub struct App {
     pub pulsar: PulsarApp,
+    pub receiver: Receiver<AppEvent>,
     pub info_to_show: Option<InfoToShow>,
     pub confirmation_modal: Option<ConfirmationModal>,
     pub active_resource: Resource,
@@ -361,8 +365,27 @@ pub struct App {
     pub cluster_name: String,
 }
 
+pub struct DrawState {
+    pub info_to_show: Option<InfoToShow>,
+    pub confirmation_modal: Option<ConfirmationModal>,
+    pub active_resource: Resource,
+    pub resources: Resources,
+    pub cluster_name: String,
+}
+
+impl From<&mut App> for DrawState {
+    fn from(value: &mut App) -> Self {
+        DrawState {
+            info_to_show: value.info_to_show.clone(),
+            confirmation_modal: value.confirmation_modal.clone(),
+            active_resource: value.active_resource.clone(),
+            resources: value.resources.clone(),
+            cluster_name: value.cluster_name.clone(),
+        }
+    }
+}
+
 pub struct PulsarApp {
-    pub receiver: Receiver<AppEvent>,
     pub sender: Sender<AppEvent>,
     pub client: Arc<Mutex<Pulsar<TokioExecutor>>>,
     pub token: Token,
@@ -373,10 +396,16 @@ pub async fn update<'a>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,
 ) -> anyhow::Result<()> {
+    // How to do the propagation?
+    // * We need signal that it's time to redraw, can't resolve to polling.
+    // * Need to draw only the freshest state
+    // * Need to ignore old draw requests if we have more fresh stuff to draw already
+    // * Can we have only one draw request at one time? Arc<Mutex<Option<DrawState>>> ?
+    //let (sender, receiver): (Sender<DrawState>, Receiver<DrawState>) = channel();
+
     loop {
-        terminal.draw(|f| draw::draw_new(f, app))?;
+        terminal.draw(|f| draw::draw(f, app.into()))?;
         if let Ok(event) = app
-            .pulsar
             .receiver
             .recv_timeout(Duration::from_millis(100))
         {
