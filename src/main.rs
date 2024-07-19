@@ -14,6 +14,7 @@ use pulsar_admin::{fetch_clusters, fetch_namespaces};
 use pulsar_admin_sdk::apis::configuration::Configuration;
 use pulsar_listener::TopicEvent;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::{
     io,
     sync::{
@@ -151,13 +152,14 @@ async fn run(args: Args) -> anyhow::Result<()> {
     execute!(stdout, EnterAlternateScreen)?;
     enable_raw_mode()?;
 
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
+    let terminal = Arc::new(Mutex::new(Terminal::new(CrosstermBackend::new(stdout))?));
 
-    let result = update(&mut terminal, &mut app).await;
+    let result = update(terminal.clone(), &mut app).await;
 
+    println!("disabling raw mode");
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    execute!(terminal.lock().expect("Could not lock").backend_mut(), LeaveAlternateScreen)?;
+    terminal.lock().expect("Could not lock").show_cursor()?;
 
     result
 }

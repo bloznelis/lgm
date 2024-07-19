@@ -3,12 +3,14 @@ use anyhow::anyhow;
 use chrono::TimeDelta;
 use clipboard::{ClipboardContext, ClipboardProvider};
 use core::fmt;
+use std::sync::mpsc::channel;
 use crossterm::event::KeyCode;
 use itertools::Itertools;
 use pulsar::{Pulsar, TokioExecutor};
 use pulsar_admin_sdk::apis::configuration::Configuration;
 use std::io::Stdout;
-use std::usize;
+use std::sync::Mutex;
+use std::{thread, usize};
 use std::{
     sync::{
         mpsc::{Receiver, Sender},
@@ -392,19 +394,60 @@ pub struct PulsarApp {
     pub active_sub_handle: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
+enum DrawSignal {
+    Draw,
+    Stop
+}
+
+pub fn draw_loop(
+    terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
+    draw_state: Arc<Mutex<Option<DrawState>>>,
+    notify: Receiver<DrawSignal>,
+) {
+    loop {
+        match notify.recv() {
+            Ok(DrawSignal::Draw) => {
+                let mut guard = draw_state
+                    .lock()
+                    .expect("Could not lock draw state mutex");
+                let draw_state = guard.take();
+                std::mem::drop(guard); // Drop the lock, as it extracted the draw_state and can
+                                       // proceed with long draw.
+
+                if let Some(draw_state) = draw_state {
+                    terminal
+                        .lock()
+                        .expect("Could not lock terminal mutex")
+                        .draw(|f| draw::draw(f, draw_state))
+                        .expect("Failed to draw");
+                }
+            }
+            Ok(DrawSignal::Stop) => {
+                return ()
+            }
+            Err(err) => eprintln!("Failed while listening for draw signal {err}"),
+        }
+    }
+}
+
 pub async fn update<'a>(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
     app: &mut App,
 ) -> anyhow::Result<()> {
+    let (sender, receiver): (Sender<DrawSignal>, Receiver<DrawSignal>) = channel();
+    let draw_state: Arc<Mutex<Option<DrawState>>> = Arc::new(Mutex::new(None));
+    let draw_state_here = draw_state.clone();
+    let _handle = thread::spawn(move || draw_loop(terminal, draw_state, receiver));
     // How to do the propagation?
     // * We need signal that it's time to redraw, can't resolve to polling.
     // * Need to draw only the freshest state
     // * Need to ignore old draw requests if we have more fresh stuff to draw already
     // * Can we have only one draw request at one time? Arc<Mutex<Option<DrawState>>> ?
-    //let (sender, receiver): (Sender<DrawState>, Receiver<DrawState>) = channel();
 
     loop {
-        terminal.draw(|f| draw::draw(f, app.into()))?;
+        draw_state_here.lock().expect("Failed to lock").replace(app.into());
+        sender.send(DrawSignal::Draw)?;
+
         if let Ok(event) = app
             .receiver
             .recv_timeout(Duration::from_millis(100))
@@ -1077,7 +1120,11 @@ pub async fn update<'a>(
         }
     }
 
+    sender.send(DrawSignal::Stop)?;
+    //_handle.join().map_err(|_| anyhow!("Failed to join draw thread handle"));
+
     Ok(())
+
 }
 
 fn get_new_cursor<A>(col: &[A], old_cursor: Option<usize>) -> Option<usize> {
