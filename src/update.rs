@@ -1,4 +1,5 @@
 use crate::pulsar_admin;
+
 use anyhow::anyhow;
 use chrono::TimeDelta;
 use clipboard::{ClipboardContext, ClipboardProvider};
@@ -83,6 +84,12 @@ impl Listening {
             }
             None => messages,
         };
+
+        if self.filtered_messages.is_empty() {
+            self.cursor = None
+        } else {
+            self.cursor = Some(0)
+        }
     }
 }
 
@@ -396,18 +403,10 @@ pub async fn update<'a>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,
 ) -> anyhow::Result<()> {
-    // How to do the propagation?
-    // * We need signal that it's time to redraw, can't resolve to polling.
-    // * Need to draw only the freshest state
-    // * Need to ignore old draw requests if we have more fresh stuff to draw already
-    // * Can we have only one draw request at one time? Arc<Mutex<Option<DrawState>>> ?
-    //let (sender, receiver): (Sender<DrawState>, Receiver<DrawState>) = channel();
-
     loop {
-        terminal.draw(|f| draw::draw(f, app.into()))?;
         if let Ok(event) = app
             .receiver
-            .recv_timeout(Duration::from_millis(100))
+            .recv_timeout(Duration::from_millis(10))
         {
             match event {
                 // XXX: Allow only a subset of events if search is enabled
@@ -579,7 +578,8 @@ pub async fn update<'a>(
                             SelectedPanel::Search => match &app.resources.listening.search {
                                 Some(_) => {
                                     app.resources.listening.panel = SelectedPanel::Left;
-                                    app.resources.listening.search = None
+                                    app.resources.listening.search = None;
+                                    app.resources.listening.filter_messages();
                                 }
                                 None => {
                                     app.resources.listening.search = Some(String::new());
@@ -955,6 +955,14 @@ pub async fn update<'a>(
 
                         if app.resources.listening.cursor.is_none() {
                             app.resources.listening.cursor = Some(0)
+                        } else {
+                            app.resources.listening.cursor = Some(
+                                app.resources
+                                    .listening
+                                    .filtered_messages
+                                    .len()
+                                    .saturating_sub(1),
+                            );
                         }
                     }
                 }
@@ -1022,7 +1030,7 @@ pub async fn update<'a>(
                             }
                         }
                         Resource::Topics => {
-                            if let Some(_) = app.resources.selected_topic() {
+                            if app.resources.selected_topic().is_some() {
                                 refresh_subscriptions(app).await;
                             }
                         }
@@ -1074,6 +1082,12 @@ pub async fn update<'a>(
                     }
                 }
             }
+        } else {
+            //let now = Instant::now();
+            terminal.draw(|f| draw::draw(f, app.into()))?;
+            //let end = Instant::now();
+            //let elapsed = (end - now).as_millis();
+            //log::info!("draw took {elapsed}ms");
         }
     }
 

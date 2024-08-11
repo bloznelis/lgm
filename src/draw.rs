@@ -227,22 +227,20 @@ fn draw_subscriptions(frame: &mut Frame, layout: &LayoutChunks, draw_state: Draw
     let subscriptions = draw_state.resources.subscriptions;
 
     let table = Table::new(
-        subscriptions.subscriptions.iter().map(|sub| {
-            Row::new(vec![
-                Cell::new(sub.name.clone()),
-                Cell::new(sub.sub_type.clone()),
-                Cell::new(sub.consumer_count.to_string()),
-                style_backlog_cell(sub.backlog_size),
-            ])
-        }),
+        subscriptions
+            .subscriptions
+            .into_iter()
+            .map(|sub| {
+                Row::new(vec![
+                    Cell::new(sub.name),
+                    Cell::new(sub.sub_type),
+                    Cell::new(sub.consumer_count.to_string()),
+                    style_backlog_cell(sub.backlog_size),
+                ])
+            }),
         widths,
     )
-    .header(Row::new(vec![
-        "name".to_string(),
-        "type".to_string(),
-        "consumers".to_string(),
-        "backlog".to_string(),
-    ]))
+    .header(Row::new(vec!["name", "type", "consumers", "backlog"]))
     .block(content_block)
     .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
 
@@ -279,23 +277,19 @@ fn draw_consumers(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
     let consumers = draw_state.resources.consumers;
 
     let table = Table::new(
-        consumers
-            .consumers
-            .clone()
-            .into_iter()
-            .map(|consumer| {
-                Row::new(vec![
-                    Cell::new(consumer.name),
-                    Cell::new(consumer.connected_since),
-                    Cell::new(consumer.unacked_messages.to_string()),
-                ])
-            }),
+        consumers.consumers.into_iter().map(|consumer| {
+            Row::new(vec![
+                Cell::new(consumer.name),
+                Cell::new(consumer.connected_since),
+                Cell::new(consumer.unacked_messages.to_string()),
+            ])
+        }),
         widths,
     )
     .header(Row::new(vec![
-        "name".to_string(),
-        "connected since".to_string(),
-        "unacked messages".to_string(),
+        "name",
+        "connected since",
+        "unacked messages",
     ]))
     .block(content_block)
     .highlight_style(Style::default().bg(Color::Green).fg(Color::Black));
@@ -372,7 +366,7 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
                 BorderType::Plain
             },
         )
-        .title(format!("Messages of {topic_name}"))
+        .title(format!("{} messages of {topic_name}", &draw_state.resources.listening.filtered_messages.len()))
         .title_alignment(Alignment::Center)
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
@@ -449,25 +443,25 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
     let text: Vec<Line<'_>> = content
         .lines()
         .map(|line| {
-            if let Some(search) = listening.search.clone() {
-                if line.contains(&search) && !search.is_empty() {
-                    if let Some((first_half, second_half)) = line.split_once(&search) {
-                        Line::from(vec![
-                            Span::raw(first_half),
-                            Span::raw(search.clone())
-                                .style(Style::default().fg(Color::Black).bg(Color::Green)),
-                            Span::raw(second_half),
-                        ])
-                    //TODO: Fix this yikes
+            listening
+                .search
+                .as_ref()
+                .and_then(|search| {
+                    if line.contains(search) && !search.is_empty() {
+                        line.split_once(search)
+                            .map(|(first_half, second_half)| {
+                                Line::from(vec![
+                                    Span::raw(first_half),
+                                    Span::raw(search.clone())
+                                        .style(Style::default().fg(Color::Black).bg(Color::Green)),
+                                    Span::raw(second_half),
+                                ])
+                            })
                     } else {
-                        Line::from(line)
+                        None
                     }
-                } else {
-                    Line::from(line)
-                }
-            } else {
-                Line::from(line)
-            }
+                })
+                .unwrap_or_else(|| Line::from(line))
         })
         .collect();
 
@@ -616,37 +610,37 @@ fn draw_notification(frame: &mut Frame, draw_state: &DrawState, layout: &LayoutC
 }
 
 #[derive(Clone)]
-struct Info {
-    cluster_name: LabeledItem,
+struct Info<'a> {
+    cluster_name: LabeledItem<'a>,
 }
 
 #[derive(Clone)]
-struct LabeledItem {
-    keybind: String,
-    description: String,
+struct LabeledItem<'a> {
+    keybind: &'a str,
+    description: &'a str,
     color: Color,
 }
 
-impl LabeledItem {
-    fn help(key: &str, desc: &str) -> LabeledItem {
+impl LabeledItem<'_> {
+    fn help<'a>(key: &'a str, desc: &'a str) -> LabeledItem<'a> {
         LabeledItem {
-            keybind: key.to_string(),
-            description: desc.to_string(),
+            keybind: key,
+            description: desc,
             color: Color::Green,
         }
     }
 
-    fn info(key: &str, desc: &str) -> LabeledItem {
+    fn info<'a>(key: &'a str, desc: &'a str) -> LabeledItem<'a> {
         LabeledItem {
-            keybind: key.to_string(),
-            description: desc.to_string(),
+            keybind: key,
+            description: desc,
             color: Color::Black,
         }
     }
 }
 
-impl From<LabeledItem> for Line<'_> {
-    fn from(value: LabeledItem) -> Self {
+impl<'a> From<LabeledItem<'a>> for Line<'a> {
+    fn from(value: LabeledItem<'a>) -> Line<'a> {
         Line::from(vec![
             Span::raw(value.keybind).style(
                 Style::default()
@@ -659,7 +653,7 @@ impl From<LabeledItem> for Line<'_> {
     }
 }
 
-impl From<LabeledItem> for String {
+impl From<LabeledItem<'_>> for String {
     fn from(value: LabeledItem) -> Self {
         String::from(Line::from(vec![
             Span::raw(value.keybind).style(Style::default().fg(Color::Green)),
@@ -669,8 +663,8 @@ impl From<LabeledItem> for String {
     }
 }
 
-impl From<LabeledItem> for Text<'_> {
-    fn from(value: LabeledItem) -> Self {
+impl<'a> From<LabeledItem<'a>> for Text<'a> {
+    fn from(value: LabeledItem<'a>) -> Text<'a> {
         Text::from(Into::<Line>::into(value))
     }
 }

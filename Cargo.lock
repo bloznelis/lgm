@@ -1660,6 +1660,7 @@ dependencies = [
  "crossterm",
  "futures",
  "itertools 0.12.1",
+ "log",
  "pulsar",
  "pulsar-admin-sdk",
  "ratatui",
@@ -1667,6 +1668,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "simple-logging",
  "tokio",
  "toml",
  "uuid",
@@ -2105,7 +2107,7 @@ checksum = "1e401f977ab385c9e4e3ab30627d6f26d00e2c73eef317493c4ec6d468726cf8"
 dependencies = [
  "cfg-if",
  "libc",
- "redox_syscall",
+ "redox_syscall 0.5.1",
  "smallvec",
  "windows-targets 0.52.5",
 ]
@@ -2396,9 +2398,9 @@ dependencies = [
 
 [[package]]
 name = "pulsar-admin-sdk"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b679cb114efae0e4a19426377fc2e953a3c48f6a4ed75e129431c6dbbdabe54"
+checksum = "a4b4d06f8cd515d6e23de3dc6e1ad88a266172e2240585b8b77e995cc9698874"
 dependencies = [
  "reqwest 0.11.27",
  "serde",
@@ -2467,6 +2469,12 @@ dependencies = [
  "unicode-truncate",
  "unicode-width",
 ]
+
+[[package]]
+name = "redox_syscall"
+version = "0.1.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41cc0f7e4d5d4544e8861606a285bb08d3e70712ccc7d2b84d7c0ccfaf4b05ce"
 
 [[package]]
 name = "redox_syscall"
@@ -2971,6 +2979,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "simple-logging"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b00d48e85675326bb182a2286ea7c1a0b264333ae10f27a937a72be08628b542"
+dependencies = [
+ "lazy_static",
+ "log",
+ "thread-id",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3162,6 +3181,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.66",
+]
+
+[[package]]
+name = "thread-id"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7fbf4c9d56b320106cd64fd024dadfa0be7cb4706725fc44a7d7ce952d820c1"
+dependencies = [
+ "libc",
+ "redox_syscall 0.1.57",
+ "winapi",
 ]
 
 [[package]]

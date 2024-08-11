@@ -45,6 +45,9 @@ struct Args {
 async fn main() {
     let args = Args::parse();
 
+    //let _ = simple_logging::log_to_file("app.log", LevelFilter::Info);
+    //log::info!("Starting the app");
+
     match run(args).await {
         Ok(_) => println!("bye!"),
         Err(error) => eprintln!("Failed unexpectedlly. Reason: {:?}", error),
