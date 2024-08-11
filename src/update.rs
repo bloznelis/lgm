@@ -176,6 +176,14 @@ pub struct ConfirmationModal {
 }
 
 #[derive(Clone, Debug)]
+pub struct InputModal {
+    pub message: String,
+    pub input: String,
+    pub input_suffix: String,
+    pub is_input_numeric: bool,
+}
+
+#[derive(Clone, Debug)]
 pub enum ConfirmedCommand {
     CloseInfoMessage,
     DeleteSubscription {
@@ -321,6 +329,12 @@ impl Resources {
             .cursor
             .and_then(|cursor| self.subscriptions.subscriptions.get(cursor))
     }
+
+    pub fn selected_subscription_name(&self) -> Option<&str> {
+        self.selected_subscription()
+            .map(|sub| sub.name.as_ref())
+    }
+
     pub fn selected_message(&self) -> Option<&SubMessage> {
         self.listening
             .cursor
@@ -366,15 +380,18 @@ pub struct App {
     pub receiver: Receiver<AppEvent>,
     pub info_to_show: Option<InfoToShow>,
     pub confirmation_modal: Option<ConfirmationModal>,
+    pub input_modal: Option<InputModal>,
     pub active_resource: Resource,
     pub resources: Resources,
     pub pulsar_admin_cfg: Configuration,
     pub cluster_name: String,
 }
 
+#[derive(Clone)]
 pub struct DrawState {
     pub info_to_show: Option<InfoToShow>,
     pub confirmation_modal: Option<ConfirmationModal>,
+    pub input_modal: Option<InputModal>,
     pub active_resource: Resource,
     pub resources: Resources,
     pub cluster_name: String,
@@ -385,6 +402,7 @@ impl From<&mut App> for DrawState {
         DrawState {
             info_to_show: value.info_to_show.clone(),
             confirmation_modal: value.confirmation_modal.clone(),
+            input_modal: value.input_modal.clone(),
             active_resource: value.active_resource.clone(),
             resources: value.resources.clone(),
             cluster_name: value.cluster_name.clone(),
@@ -409,9 +427,10 @@ pub async fn update<'a>(
             .recv_timeout(Duration::from_millis(10))
         {
             match event {
-                // XXX: Allow only a subset of events if search is enabled
+                // XXX: Allow only a subset of events if input is expected
                 AppEvent::Control(control_event)
-                    if matches!(app.resources.listening.panel, SelectedPanel::Search)
+                    if (matches!(app.resources.listening.panel, SelectedPanel::Search)
+                        || app.input_modal.is_some())
                         && matches!(
                             control_event,
                             ControlEvent::Yank
@@ -419,7 +438,7 @@ pub async fn update<'a>(
                                 | ControlEvent::Up
                                 | ControlEvent::Down
                                 | ControlEvent::Delete
-                                | ControlEvent::ResetSubscription(..)
+                                | ControlEvent::Seek
                         ) => {}
 
                 AppEvent::Control(ControlEvent::ClearInput) => {
@@ -445,6 +464,21 @@ pub async fn update<'a>(
                             }
 
                             app.resources.listening.filter_messages();
+                        }
+                    }
+
+                    if let Some(input_modal) = &mut app.input_modal {
+                        let char = match input {
+                            KeyCode::Char(char)
+                                if input_modal.is_input_numeric && char.is_numeric() =>
+                            {
+                                Some(char)
+                            }
+                            _ => None,
+                        };
+
+                        if let Some(char) = char {
+                            input_modal.input = format!("{}{}", input_modal.input, char)
                         }
                     }
                 }
@@ -616,82 +650,23 @@ pub async fn update<'a>(
                         }
                     }
                 }
-                AppEvent::Control(ControlEvent::ResetSubscription(length)) => {
-                    if let Resource::Listening { sub_name } = &app.active_resource {
-                        let length = match length {
-                            crate::ResetLength::OneHour => {
-                                TimeDelta::try_hours(1).expect("Expecting hours")
-                            }
-                            crate::ResetLength::TwentyFourHours => {
-                                TimeDelta::try_hours(24).expect("Expecting hours")
-                            }
-                            crate::ResetLength::Week => {
-                                TimeDelta::try_days(7).expect("Expecting days")
-                            }
-                        };
-
-                        let result = pulsar_admin::reset_subscription(
-                            app.resources
-                                .selected_tenant_name()
-                                .expect("tenant must be set"),
-                            app.resources
-                                .selected_namespace_name()
-                                .expect("namespace must be set"),
-                            app.resources
-                                .selected_topic_name()
-                                .expect("namespace must be set"),
-                            sub_name,
-                            &app.pulsar_admin_cfg,
-                            length,
-                        )
-                        .await;
-
-                        if let Err(err) = result {
-                            show_error_msg(app, err.to_string());
-                        } else {
-                            show_info_msg(app, "Seeked successfully.");
-                        };
+                AppEvent::Control(ControlEvent::Seek) => {
+                    if let Resource::Listening { .. } = &app.active_resource {
+                        app.input_modal = Some(InputModal {
+                            message: "Seek subscription for:".to_string(),
+                            input: "24".to_string(),
+                            input_suffix: " hours".to_string(),
+                            is_input_numeric: true,
+                        })
                     }
                     if let Resource::Subscriptions = &app.active_resource {
                         if let Some(subscription) = app.resources.selected_subscription() {
-                            let (time_delta, time_str) = match length {
-                                crate::ResetLength::OneHour => {
-                                    (TimeDelta::try_hours(1).expect("Expecting hours"), "1h")
-                                }
-                                crate::ResetLength::TwentyFourHours => {
-                                    (TimeDelta::try_hours(24).expect("Expecting hours"), "24h")
-                                }
-                                crate::ResetLength::Week => {
-                                    (TimeDelta::try_days(7).expect("Expecting days"), "7days")
-                                }
-                            };
-
-                            app.confirmation_modal = Some(ConfirmationModal {
-                                message: format!(
-                                    "Seek '{}' subscription for {time_str}?",
-                                    subscription.name
-                                ),
-                                command: ConfirmedCommand::SeekSubscription {
-                                    tenant: app
-                                        .resources
-                                        .selected_tenant_name()
-                                        .expect("tenant must be set")
-                                        .to_string(),
-                                    namespace: app
-                                        .resources
-                                        .selected_namespace_name()
-                                        .expect("namespace must be set")
-                                        .to_string(),
-                                    topic: app
-                                        .resources
-                                        .selected_topic_name()
-                                        .expect("namespace must be set")
-                                        .to_string(),
-                                    sub_name: subscription.name.clone(),
-                                    time_delta,
-                                    cfg: app.pulsar_admin_cfg.clone(),
-                                },
-                            })
+                            app.input_modal = Some(InputModal {
+                                message: format!("Seek {} subscription for:", subscription.name),
+                                input: "24".to_string(),
+                                input_suffix: " hours".to_string(),
+                                is_input_numeric: true,
+                            });
                         }
                     }
                 }
@@ -780,7 +755,15 @@ pub async fn update<'a>(
 
                 AppEvent::Control(ControlEvent::BackSpace) => {
                     if let Resource::Listening { .. } = &app.active_resource {
-                        if matches!(app.resources.listening.panel, SelectedPanel::Search) {
+                        if let Some(input_modal) = &mut app.input_modal {
+                            let len = input_modal.input.len();
+                            let new = if len > 0 {
+                                input_modal.input[0..len - 1].to_owned()
+                            } else {
+                                String::new()
+                            };
+                            input_modal.input = new;
+                        } else if matches!(app.resources.listening.panel, SelectedPanel::Search) {
                             app.resources.listening.search = match &app.resources.listening.search {
                                 Some(current_search) => {
                                     let len = current_search.len();
@@ -795,10 +778,24 @@ pub async fn update<'a>(
                             app.resources.listening.filter_messages();
                         }
                     }
+
+                    if let Resource::Subscriptions { .. } = &app.active_resource {
+                        if let Some(input_modal) = &mut app.input_modal {
+                            let len = input_modal.input.len();
+                            let new = if len > 0 {
+                                input_modal.input[0..len - 1].to_owned()
+                            } else {
+                                String::new()
+                            };
+                            input_modal.input = new;
+                        }
+                    }
                 }
 
                 AppEvent::Control(ControlEvent::Back | ControlEvent::Esc) => {
-                    if app.confirmation_modal.is_some() {
+                    if app.input_modal.is_some() {
+                        app.input_modal = None;
+                    } else if app.confirmation_modal.is_some() {
                         app.confirmation_modal = None;
                     } else {
                         match &app.active_resource {
@@ -1035,7 +1032,44 @@ pub async fn update<'a>(
                             }
                         }
                         Resource::Subscriptions { .. } => {
-                            if let Some(subscription) = app.resources.selected_subscription() {
+                            if let Some(input_modal) = &app.input_modal {
+                                let numeric_input = input_modal
+                                    .input
+                                    .parse::<i64>()
+                                    .expect("Expecting numeric hours input");
+                                let hours =
+                                    TimeDelta::try_hours(numeric_input).expect("Expecting hours");
+
+                                let result = pulsar_admin::reset_subscription(
+                                    app.resources
+                                        .selected_tenant_name()
+                                        .expect("tenant must be set"),
+                                    app.resources
+                                        .selected_namespace_name()
+                                        .expect("namespace must be set"),
+                                    app.resources
+                                        .selected_topic_name()
+                                        .expect("namespace must be set"),
+                                    app.resources
+                                        .selected_subscription_name()
+                                        .expect("subscription must be set"),
+                                    &app.pulsar_admin_cfg,
+                                    hours,
+                                )
+                                .await;
+
+                                if let Err(err) = result {
+                                    show_error_msg(app, err.to_string());
+                                } else {
+                                    show_info_msg(
+                                        app,
+                                        format!("{} hours seeked", numeric_input).as_ref(),
+                                    );
+                                };
+
+                                app.input_modal = None;
+                            } else if let Some(subscription) = app.resources.selected_subscription()
+                            {
                                 let consumers = pulsar_admin::fetch_consumers(
                                     app.resources
                                         .selected_tenant_name()
@@ -1073,8 +1107,42 @@ pub async fn update<'a>(
                                 }
                             }
                         }
-                        Resource::Listening { .. } => {
-                            if let SelectedPanel::Search = &app.resources.listening.panel {
+                        Resource::Listening { sub_name } => {
+                            if let Some(input_modal) = &app.input_modal {
+                                let numeric_input = input_modal
+                                    .input
+                                    .parse::<i64>()
+                                    .expect("Expecting numeric hours input");
+                                let hours =
+                                    TimeDelta::try_hours(numeric_input).expect("Expecting hours");
+
+                                let result = pulsar_admin::reset_subscription(
+                                    app.resources
+                                        .selected_tenant_name()
+                                        .expect("tenant must be set"),
+                                    app.resources
+                                        .selected_namespace_name()
+                                        .expect("namespace must be set"),
+                                    app.resources
+                                        .selected_topic_name()
+                                        .expect("namespace must be set"),
+                                    &sub_name,
+                                    &app.pulsar_admin_cfg,
+                                    hours,
+                                )
+                                .await;
+
+                                if let Err(err) = result {
+                                    show_error_msg(app, err.to_string());
+                                } else {
+                                    show_info_msg(
+                                        app,
+                                        format!("{} hours seeked", numeric_input).as_ref(),
+                                    );
+                                };
+
+                                app.input_modal = None;
+                            } else if let SelectedPanel::Search = &app.resources.listening.panel {
                                 app.resources.listening.panel = SelectedPanel::Left
                             }
                         }

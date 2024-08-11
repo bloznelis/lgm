@@ -1,7 +1,7 @@
 use std::usize;
 
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
+use ratatui::style::{Modifier, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Cell, Row, Table, TableState, Wrap};
 
@@ -12,7 +12,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::update::{ConfirmationModal, DrawState, Listening, Subscription, Tenants};
+use crate::update::{ConfirmationModal, DrawState, InputModal, Listening, Subscription, Tenants};
 use crate::{Resource, SelectedPanel};
 
 struct HeaderLayout {
@@ -39,11 +39,14 @@ pub fn draw(frame: &mut Frame, draw_state: DrawState) {
         },
     );
 
-    if let Some(modal) = draw_state.confirmation_modal.as_ref() {
-        draw_confirmation_modal(frame, modal)
+    let confirmation_modal = draw_state.confirmation_modal.as_ref().cloned();
+    let input_modal = draw_state.input_modal.as_ref().cloned();
+
+    if let Some(modal) = &draw_state.input_modal {
+        draw_input_modal(frame, modal.clone())
     }
 
-    match &draw_state.active_resource {
+    match draw_state.active_resource {
         Resource::Tenants => draw_tenants(frame, layout, draw_state.resources.tenants),
         Resource::Namespaces => draw_namespaces(frame, layout, draw_state),
         Resource::Topics => draw_topics(frame, layout, draw_state),
@@ -51,13 +54,18 @@ pub fn draw(frame: &mut Frame, draw_state: DrawState) {
         Resource::Consumers => draw_consumers(frame, layout, draw_state),
         Resource::Listening { .. } => draw_listening(frame, layout, draw_state),
     }
+
+    if let Some(modal) = confirmation_modal {
+        draw_confirmation_modal(frame, modal)
+    }
+
+    if let Some(modal) = input_modal {
+        draw_input_modal(frame, modal.clone())
+    }
 }
 
-fn draw_confirmation_modal(frame: &mut Frame, modal: &ConfirmationModal) {
-    let message = format!(
-        "{}\n\n n to cancel | <c-a> to accept",
-        modal.message.clone()
-    );
+fn draw_confirmation_modal(frame: &mut Frame, modal: ConfirmationModal) {
+    let message = format!("{}\n\n n to cancel | <c-a> to accept", modal.message);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
@@ -67,6 +75,29 @@ fn draw_confirmation_modal(frame: &mut Frame, modal: &ConfirmationModal) {
         .wrap(Wrap { trim: false })
         .block(block)
         .style(Style::new());
+    let rect = centered_rect(35, 12, frame.size());
+
+    frame.render_widget(Clear, rect);
+    frame.render_widget(paragraph, rect)
+}
+
+fn draw_input_modal(frame: &mut Frame, modal: InputModal) {
+    let mm = vec![
+        Line::from(modal.message),
+        Line::from(format!("{}{}", modal.input, modal.input_suffix)).style(Style::new().bold()),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(Style::new().fg(Color::Red));
+
+    let paragraph = Paragraph::new(mm)
+        .centered()
+        .wrap(Wrap { trim: false })
+        .block(block)
+        .style(Style::default());
+
     let rect = centered_rect(35, 12, frame.size());
 
     frame.render_widget(Clear, rect);
@@ -196,16 +227,14 @@ fn draw_subscriptions(frame: &mut Frame, layout: &LayoutChunks, draw_state: Draw
         LabeledItem::help("<enter>", "consumers"),
         LabeledItem::help("<c-d>", "delete"),
         LabeledItem::help("<c-p>", "skip backlog"),
-        LabeledItem::help("u", "seek 1h"),
-        LabeledItem::help("i", "seek 24h"),
-        LabeledItem::help("o", "seek 1 week"),
+        LabeledItem::help("s", "seek"),
     ];
     draw_help(frame, layout, help);
 
     let empty_string = String::new();
     let topic_name = draw_state
         .resources
-        .selected_subscription()
+        .selected_topic()
         .map(|topic| &topic.name)
         .unwrap_or(&empty_string);
 
@@ -334,9 +363,7 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
     let help = vec![
         LabeledItem::help("<esc>", "back"),
         LabeledItem::help("<tab>", "cycle panels"),
-        LabeledItem::help("u", "seek 1h"),
-        LabeledItem::help("i", "seek 24h"),
-        LabeledItem::help("o", "seek 1 week"),
+        LabeledItem::help("s", "seek"),
         LabeledItem::help("y", "copy to clipboard"),
         LabeledItem::help("/", "toggle search"),
     ];
@@ -366,7 +393,14 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
                 BorderType::Plain
             },
         )
-        .title(format!("{} messages of {topic_name}", &draw_state.resources.listening.filtered_messages.len()))
+        .title(format!(
+            "{} messages of {topic_name}",
+            &draw_state
+                .resources
+                .listening
+                .filtered_messages
+                .len()
+        ))
         .title_alignment(Alignment::Center)
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));

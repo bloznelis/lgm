@@ -116,6 +116,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
             active_sub_handle: None,
         },
         confirmation_modal: None,
+        input_modal: None,
         info_to_show: None,
         active_resource: Resource::Namespaces,
         resources: Resources {
@@ -182,7 +183,7 @@ pub enum ControlEvent {
     Skip,
     Accept,
     Refuse,
-    ResetSubscription(ResetLength),
+    Seek,
 }
 
 pub enum ResetLength {
@@ -234,15 +235,7 @@ fn listen_input(sender: Sender<AppEvent>) {
                 KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
                     Some(AppEvent::Control(ControlEvent::ClearInput))
                 }
-                KeyCode::Char('u') => Some(AppEvent::Control(ControlEvent::ResetSubscription(
-                    ResetLength::OneHour,
-                ))),
-                KeyCode::Char('i') => Some(AppEvent::Control(ControlEvent::ResetSubscription(
-                    ResetLength::TwentyFourHours,
-                ))),
-                KeyCode::Char('o') => Some(AppEvent::Control(ControlEvent::ResetSubscription(
-                    ResetLength::Week,
-                ))),
+                KeyCode::Char('s') => Some(AppEvent::Control(ControlEvent::Seek)),
                 KeyCode::Tab => Some(AppEvent::Control(ControlEvent::CycleSide)),
                 KeyCode::Enter => Some(AppEvent::Control(ControlEvent::Enter)),
                 KeyCode::Char('h') | KeyCode::Left => Some(AppEvent::Control(ControlEvent::Back)),
