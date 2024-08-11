@@ -595,12 +595,12 @@ fn draw_logo(frame: &mut Frame, layout: &LayoutChunks) {
 }
 
 fn draw_info(frame: &mut Frame, layout: &LayoutChunks, info: Info) {
-    let help_block = Block::default()
+    let block = Block::default()
         .borders(Borders::NONE)
         .padding(Padding::new(1, 1, 1, 1));
     //TODO: add more info lines to a vector, once we have more than just cluster name to show
     let items = vec![Line::from(info.cluster_name)];
-    let paragraph = Paragraph::new(Text::from(items)).block(help_block.clone());
+    let paragraph = Paragraph::new(Text::from(items)).block(block);
 
     frame.render_widget(paragraph, layout.header.info_rect);
 }
@@ -668,7 +668,7 @@ impl LabeledItem<'_> {
         LabeledItem {
             keybind: key,
             description: desc,
-            color: Color::Black,
+            color: Color::LightGreen,
         }
     }
 }
