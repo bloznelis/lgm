@@ -36,6 +36,7 @@ pub fn draw(frame: &mut Frame, draw_state: DrawState) {
         layout,
         Info {
             cluster_name: LabeledItem::info("cluster:", &draw_state.cluster_name),
+            lgm_version: LabeledItem::info("lgm:", &draw_state.lgm_version)
         },
     );
 
@@ -75,7 +76,7 @@ fn draw_confirmation_modal(frame: &mut Frame, modal: ConfirmationModal) {
         .wrap(Wrap { trim: false })
         .block(block)
         .style(Style::new());
-    let rect = centered_rect(35, 12, frame.size());
+    let rect = centered_rect(70, 5, frame.size());
 
     frame.render_widget(Clear, rect);
     frame.render_widget(paragraph, rect)
@@ -98,17 +99,18 @@ fn draw_input_modal(frame: &mut Frame, modal: InputModal) {
         .block(block)
         .style(Style::default());
 
-    let rect = centered_rect(35, 12, frame.size());
+    let rect = centered_rect(40, 4, frame.size());
 
     frame.render_widget(Clear, rect);
     frame.render_widget(paragraph, rect)
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+fn centered_rect(percent_x: u16, size_y: u16, r: Rect) -> Rect {
+    let screen_height = r.height;
     let popup_layout = Layout::vertical([
-        Constraint::Percentage((100 - percent_y) / 2),
-        Constraint::Percentage(percent_y),
-        Constraint::Percentage((100 - percent_y) / 2),
+        Constraint::Length((screen_height - size_y) / 2),
+        Constraint::Length(size_y),
+        Constraint::Length((screen_height - size_y) / 2),
     ])
     .split(r);
 
@@ -599,7 +601,7 @@ fn draw_info(frame: &mut Frame, layout: &LayoutChunks, info: Info) {
         .borders(Borders::NONE)
         .padding(Padding::new(1, 1, 1, 1));
     //TODO: add more info lines to a vector, once we have more than just cluster name to show
-    let items = vec![Line::from(info.cluster_name)];
+    let items = vec![Line::from(info.cluster_name), Line::from(info.lgm_version)];
     let paragraph = Paragraph::new(Text::from(items)).block(block);
 
     frame.render_widget(paragraph, layout.header.info_rect);
@@ -646,6 +648,7 @@ fn draw_notification(frame: &mut Frame, draw_state: &DrawState, layout: &LayoutC
 #[derive(Clone)]
 struct Info<'a> {
     cluster_name: LabeledItem<'a>,
+    lgm_version: LabeledItem<'a>,
 }
 
 #[derive(Clone)]

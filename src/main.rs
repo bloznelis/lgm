@@ -147,6 +147,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
         },
         pulsar_admin_cfg: conf,
         cluster_name,
+        lgm_version: env!("CARGO_PKG_VERSION").to_string(),
         receiver,
     };
 

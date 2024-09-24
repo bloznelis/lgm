@@ -385,6 +385,7 @@ pub struct App {
     pub resources: Resources,
     pub pulsar_admin_cfg: Configuration,
     pub cluster_name: String,
+    pub lgm_version: String,
 }
 
 #[derive(Clone)]
@@ -395,6 +396,7 @@ pub struct DrawState {
     pub active_resource: Resource,
     pub resources: Resources,
     pub cluster_name: String,
+    pub lgm_version: String
 }
 
 impl From<&mut App> for DrawState {
@@ -406,6 +408,7 @@ impl From<&mut App> for DrawState {
             active_resource: value.active_resource.clone(),
             resources: value.resources.clone(),
             cluster_name: value.cluster_name.clone(),
+            lgm_version: value.lgm_version.clone(),
         }
     }
 }
