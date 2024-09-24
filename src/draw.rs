@@ -99,7 +99,7 @@ fn draw_input_modal(frame: &mut Frame, modal: InputModal) {
         .block(block)
         .style(Style::default());
 
-    let rect = centered_rect(40, 4, frame.size());
+    let rect = centered_rect(70, 4, frame.size());
 
     frame.render_widget(Clear, rect);
     frame.render_widget(paragraph, rect)
