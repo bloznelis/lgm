@@ -65,7 +65,7 @@ pub struct Listening {
 }
 
 impl Listening {
-    pub fn filter_messages(&mut self) {
+    pub fn filter_messages(&mut self, reset_cursor: bool) {
         let messages = self.messages.clone();
         self.filtered_messages = match &self.search {
             Some(search) => {
@@ -85,10 +85,12 @@ impl Listening {
             None => messages,
         };
 
-        if self.filtered_messages.is_empty() {
-            self.cursor = None
-        } else {
-            self.cursor = Some(0)
+        if reset_cursor {
+            if self.filtered_messages.is_empty() {
+                self.cursor = None
+            } else {
+                self.cursor = Some(0)
+            }
         }
     }
 }
@@ -386,6 +388,7 @@ pub struct App {
     pub pulsar_admin_cfg: Configuration,
     pub cluster_name: String,
     pub lgm_version: String,
+    pub latest_lgm_version: Option<String>,
 }
 
 #[derive(Clone)]
@@ -396,7 +399,8 @@ pub struct DrawState {
     pub active_resource: Resource,
     pub resources: Resources,
     pub cluster_name: String,
-    pub lgm_version: String
+    pub lgm_version: String,
+    pub latest_lgm_version: Option<String>,
 }
 
 impl From<&mut App> for DrawState {
@@ -409,6 +413,7 @@ impl From<&mut App> for DrawState {
             resources: value.resources.clone(),
             cluster_name: value.cluster_name.clone(),
             lgm_version: value.lgm_version.clone(),
+            latest_lgm_version: value.latest_lgm_version.clone(),
         }
     }
 }
@@ -430,6 +435,9 @@ pub async fn update<'a>(
             .recv_timeout(Duration::from_millis(10))
         {
             match event {
+                AppEvent::LatestVersion(latest_version) => {
+                    app.latest_lgm_version = Some(latest_version);
+                }
                 // XXX: Allow only a subset of events if input is expected
                 AppEvent::Control(control_event)
                     if (matches!(app.resources.listening.panel, SelectedPanel::Search)
@@ -466,7 +474,7 @@ pub async fn update<'a>(
                                     .map(|current_search| format!("{}{}", current_search, char));
                             }
 
-                            app.resources.listening.filter_messages();
+                            app.resources.listening.filter_messages(true);
                         }
                     }
 
@@ -616,7 +624,7 @@ pub async fn update<'a>(
                                 Some(_) => {
                                     app.resources.listening.panel = SelectedPanel::Left;
                                     app.resources.listening.search = None;
-                                    app.resources.listening.filter_messages();
+                                    app.resources.listening.filter_messages(true);
                                 }
                                 None => {
                                     app.resources.listening.search = Some(String::new());
@@ -778,7 +786,7 @@ pub async fn update<'a>(
                                 }
                                 None => None,
                             };
-                            app.resources.listening.filter_messages();
+                            app.resources.listening.filter_messages(true);
                         }
                     }
 
@@ -951,19 +959,22 @@ pub async fn update<'a>(
                             properties: event.properties,
                         });
 
-                        app.resources.listening.filter_messages();
+                        app.resources.listening.filter_messages(false);
 
                         if app.resources.listening.cursor.is_none() {
                             app.resources.listening.cursor = Some(0)
-                        } else {
-                            app.resources.listening.cursor = Some(
-                                app.resources
-                                    .listening
-                                    .filtered_messages
-                                    .len()
-                                    .saturating_sub(1),
-                            );
                         }
+
+                        //This is annoying
+                        //else {
+                        //    app.resources.listening.cursor = Some(
+                        //        app.resources
+                        //            .listening
+                        //            .filtered_messages
+                        //            .len()
+                        //            .saturating_sub(1),
+                        //    );
+                        //}
                     }
                 }
                 AppEvent::Control(ControlEvent::Terminate) => break,

@@ -13,7 +13,11 @@ use pulsar::{Pulsar, TokioExecutor};
 use pulsar_admin::{fetch_clusters, fetch_namespaces};
 use pulsar_admin_sdk::apis::configuration::Configuration;
 use pulsar_listener::TopicEvent;
+use reqwest::header::HeaderValue;
+use reqwest::Client;
+use serde::Deserialize;
 use std::path::PathBuf;
+use std::time::Duration;
 use std::{
     io,
     sync::{
@@ -52,6 +56,35 @@ async fn main() {
         Ok(_) => println!("bye!"),
         Err(error) => eprintln!("Failed unexpectedlly. Reason: {:?}", error),
     }
+}
+
+#[derive(Deserialize)]
+struct ReleaseResponse {
+    pub tag_name: String,
+}
+
+async fn fetch_latest_version(sender: Sender<AppEvent>) -> anyhow::Result<()> {
+    println!("helo?");
+    let client = Client::builder()
+        .default_headers({
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.insert("User-Agent", HeaderValue::from_static("lgm"));
+            headers
+        })
+        .build()?;
+    let body = client.get("https://api.github.com/repos/bloznelis/lgm/releases/latest").send().await.expect("pls");
+
+    //println!("{:?}", body.text().await);
+
+    let json = body.json::<ReleaseResponse>()
+        .await.expect("pls2");
+    //println!("{}", json.tag_name);
+    //tokio::time::sleep(Duration::from_secs(1)).await;
+    //println!("sending");
+
+    sender.send(AppEvent::LatestVersion(json.tag_name))?;
+
+    Ok(())
 }
 
 async fn run(args: Args) -> anyhow::Result<()> {
@@ -99,8 +132,10 @@ async fn run(args: Args) -> anyhow::Result<()> {
 
     let (sender, receiver): (Sender<AppEvent>, Receiver<AppEvent>) = channel();
     let control_sender = sender.clone();
+    let version_sender = sender.clone();
     //can we use tokio thread here?
     let _handle = thread::spawn(move || listen_input(control_sender));
+    let _ = tokio::spawn(async move { fetch_latest_version(version_sender).await });
     let namespaces: Vec<Namespace> = fetch_namespaces(&default_tenant, &conf).await?;
     let cluster_name: String = fetch_clusters(&conf)
         .await?
@@ -148,6 +183,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
         pulsar_admin_cfg: conf,
         cluster_name,
         lgm_version: env!("CARGO_PKG_VERSION").to_string(),
+        latest_lgm_version: None,
         receiver,
     };
 
@@ -198,6 +234,7 @@ pub enum AppEvent {
     Control(ControlEvent),
     Command(ConfirmedCommand),
     SubscriptionEvent(TopicEvent),
+    LatestVersion(String),
 }
 
 fn listen_input(sender: Sender<AppEvent>) {

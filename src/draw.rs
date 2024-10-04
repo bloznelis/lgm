@@ -29,6 +29,16 @@ struct LayoutChunks {
 
 pub fn draw(frame: &mut Frame, draw_state: DrawState) {
     let layout = &make_layout(frame, &draw_state);
+    let latest_lgm_version = draw_state
+        .latest_lgm_version
+        .clone()
+        .unwrap_or("???".to_string());
+    let latest_lgm_version = if &latest_lgm_version == &draw_state.lgm_version {
+        "".to_string()
+    } else {
+        format!("({})", &latest_lgm_version)
+    };
+
     draw_logo(frame, layout);
     draw_notification(frame, &draw_state, layout);
     draw_info(
@@ -36,7 +46,10 @@ pub fn draw(frame: &mut Frame, draw_state: DrawState) {
         layout,
         Info {
             cluster_name: LabeledItem::info("cluster:", &draw_state.cluster_name),
-            lgm_version: LabeledItem::info("lgm:", &draw_state.lgm_version)
+            lgm_version: LabeledItem::info(
+                "lgm:",
+                &format!("{} {}", &draw_state.lgm_version, &latest_lgm_version),
+            ),
         },
     );
 
