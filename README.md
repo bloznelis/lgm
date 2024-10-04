@@ -3,7 +3,7 @@ Puslar cluser managment app in terminal.
 > The signal, a series of sharp pulses that came every 1.3 seconds, seemed too fast to be coming from anything like a star. Bell and Hewish jokingly called the new source LGM-1, for “Little Green Men.”
 >  [[1]](https://www.aps.org/publications/apsnews/200602/history.cfm)
 
-![image](https://github.com/bloznelis/lgm/assets/33397865/5814d31d-a014-4f05-94c4-acd8326ef101)
+![image](https://github.com/user-attachments/assets/94cd935f-b57b-432f-a1de-02b49edd5a4b)
 
 ## Install
 ### Cargo
