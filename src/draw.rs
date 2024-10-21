@@ -440,17 +440,16 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
     let filtered_messages = &listening.filtered_messages;
 
     let content_list = List::new(filtered_messages.iter().map(|message| {
-        if message.body.len() > horizontal_space {
+        let str = to_json_string(message.body.clone());
+        if str.len() > horizontal_space {
             format!(
                 "{}...",
-                &message
-                    .body
-                    .chars()
+                str.chars()
                     .take(horizontal_space)
                     .collect::<String>()
             )
         } else {
-            message.body.to_string()
+            str
         }
     }))
     .block(content_block)
@@ -461,8 +460,7 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
     let message_body = listening
         .cursor
         .and_then(|cursor| filtered_messages.get(cursor))
-        .and_then(|message| serde_json::from_str::<serde_json::Value>(&message.body).ok())
-        .and_then(|body_as_json| serde_json::to_string_pretty(&body_as_json).ok());
+        .map(|message| to_pretty_json(message.body.clone()));
 
     let message_properties = listening
         .cursor
@@ -528,6 +526,18 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
     draw_search(frame, listening, search_rect);
     frame.render_stateful_widget(content_list, left_rect, &mut state);
     frame.render_widget(preview_paragraph, right_rect);
+}
+
+fn to_pretty_json(body: Vec<u8>) -> String {
+    let pretty = serde_json::from_slice::<serde_json::Value>(&body).and_then(|json_value| serde_json::to_string_pretty(&json_value));
+
+    pretty.unwrap_or(String::from_utf8(body).unwrap_or("can't decode the body".to_string()))
+}
+
+fn to_json_string(body: Vec<u8>) -> String {
+    let pretty = serde_json::from_slice::<serde_json::Value>(&body).and_then(|json_value| serde_json::to_string(&json_value));
+
+    pretty.unwrap_or(String::from_utf8(body).unwrap_or("can't decode the body".to_string()))
 }
 
 fn make_layout(frame: &mut Frame, draw_state: &DrawState) -> LayoutChunks {

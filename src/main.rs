@@ -64,7 +64,6 @@ struct ReleaseResponse {
 }
 
 async fn fetch_latest_version(sender: Sender<AppEvent>) -> anyhow::Result<()> {
-    println!("helo?");
     let client = Client::builder()
         .default_headers({
             let mut headers = reqwest::header::HeaderMap::new();
@@ -72,15 +71,13 @@ async fn fetch_latest_version(sender: Sender<AppEvent>) -> anyhow::Result<()> {
             headers
         })
         .build()?;
-    let body = client.get("https://api.github.com/repos/bloznelis/lgm/releases/latest").send().await.expect("pls");
 
-    //println!("{:?}", body.text().await);
+    let body = client
+        .get("https://api.github.com/repos/bloznelis/lgm/releases/latest")
+        .send()
+        .await?;
 
-    let json = body.json::<ReleaseResponse>()
-        .await.expect("pls2");
-    //println!("{}", json.tag_name);
-    //tokio::time::sleep(Duration::from_secs(1)).await;
-    //println!("sending");
+    let json = body.json::<ReleaseResponse>().await?;
 
     sender.send(AppEvent::LatestVersion(json.tag_name))?;
 

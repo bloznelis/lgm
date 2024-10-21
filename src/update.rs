@@ -74,11 +74,15 @@ impl Listening {
                 messages
                     .into_iter()
                     .filter(|message| {
-                        message.body.contains(&search)
-                            || message
-                                .properties
-                                .iter()
-                                .any(|prop| prop.contains(&search))
+                        String::from_utf8(message.body.clone())
+                            .map(|string_body| {
+                                string_body.contains(&search)
+                                    || message
+                                        .properties
+                                        .iter()
+                                        .any(|prop| prop.contains(&search))
+                            })
+                            .unwrap_or(false)
                     })
                     .collect_vec()
             }
@@ -167,7 +171,7 @@ pub struct Consumer {
 
 #[derive(Clone, Debug)]
 pub struct SubMessage {
-    pub body: String,
+    pub body: Vec<u8>,
     pub properties: Vec<String>,
 }
 
@@ -703,8 +707,15 @@ pub async fn update<'a>(
                             let res = ClipboardContext::new()
                                 .map_err(|_| anyhow!("Failed to get the clipboard."))
                                 .and_then(|mut ctx| {
-                                    ctx.set_contents(content.to_owned())
-                                        .map_err(|_| anyhow!("Failed to copy to clipboard."))
+                                    String::from_utf8(content.clone())
+                                        .map_err(|_| {
+                                            anyhow!("Failed to decode string content for clipboard")
+                                        })
+                                        .and_then(|string_content| {
+                                            ctx.set_contents(string_content).map_err(|_| {
+                                                anyhow!("Failed to copy to clipboard.")
+                                            })
+                                        })
                                 });
 
                             match res {
@@ -955,7 +966,7 @@ pub async fn update<'a>(
                 AppEvent::SubscriptionEvent(event) => {
                     if let Resource::Listening { .. } = &mut app.active_resource {
                         app.resources.listening.messages.push(SubMessage {
-                            body: serde_json::to_string(&event.body)?,
+                            body: event.body,
                             properties: event.properties,
                         });
 

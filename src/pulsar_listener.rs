@@ -10,7 +10,7 @@ use crate::AppEvent;
 
 #[derive(Serialize, Deserialize)]
 pub struct TopicEvent {
-    pub body: Value,
+    pub body: Vec<u8>,
     pub properties: Vec<String>,
 }
 
@@ -25,8 +25,8 @@ impl DeserializeMessage for TopicEvent {
             .map(|keyvalue| format!("{}:{}", keyvalue.key, keyvalue.value))
             .collect::<Vec<String>>();
 
-        serde_json::from_slice::<Value>(&payload.data).map(|content| TopicEvent {
-            body: content,
+        Ok(TopicEvent {
+            body: payload.data.clone(),
             properties: props,
         })
     }
