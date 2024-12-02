@@ -344,7 +344,7 @@ impl Resources {
     pub fn selected_message(&self) -> Option<&SubMessage> {
         self.listening
             .cursor
-            .and_then(|cursor| self.listening.messages.get(cursor))
+            .and_then(|cursor| self.listening.filtered_messages.get(cursor))
     }
 }
 

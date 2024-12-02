@@ -17,7 +17,6 @@ use reqwest::header::HeaderValue;
 use reqwest::Client;
 use serde::Deserialize;
 use std::path::PathBuf;
-use std::time::Duration;
 use std::{
     io,
     sync::{
