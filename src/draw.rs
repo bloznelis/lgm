@@ -1,6 +1,6 @@
 use std::usize;
 
-use ratatui::layout::Rect;
+use ratatui::layout::{self, Rect};
 use ratatui::style::{Modifier, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Cell, Row, Table, TableState, Wrap};
@@ -23,8 +23,9 @@ struct HeaderLayout {
 
 struct LayoutChunks {
     header: HeaderLayout,
-    message: Option<Rect>,
+    search: Rect,
     main: Rect,
+    message: Rect,
 }
 
 pub fn draw(frame: &mut Frame, draw_state: DrawState) {
@@ -40,6 +41,7 @@ pub fn draw(frame: &mut Frame, draw_state: DrawState) {
     };
 
     draw_logo(frame, layout);
+    draw_resource_search(frame, &draw_state, layout);
     draw_notification(frame, &draw_state, layout);
     draw_info(
         frame,
@@ -136,7 +138,10 @@ fn centered_rect(percent_x: u16, size_y: u16, r: Rect) -> Rect {
 }
 
 fn draw_tenants(frame: &mut Frame, layout: &LayoutChunks, tenants: Tenants) {
-    let tenants_help = vec![LabeledItem::help("<enter>", "namespaces")];
+    let tenants_help = vec![
+        LabeledItem::help("<enter>", "namespaces"),
+        LabeledItem::help("/", "search"),
+    ];
     draw_help(frame, layout, tenants_help);
 
     let content_block = Block::default()
@@ -149,7 +154,7 @@ fn draw_tenants(frame: &mut Frame, layout: &LayoutChunks, tenants: Tenants) {
 
     let content_list = List::new(
         tenants
-            .tenants
+            .filtered_tenants
             .iter()
             .map(|tenant| tenant.name.to_string()),
     )
@@ -165,6 +170,7 @@ fn draw_namespaces(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawSta
     let help = vec![
         LabeledItem::help("<esc>", "back"),
         LabeledItem::help("<enter>", "topics"),
+        LabeledItem::help("/", "search"),
     ];
     draw_help(frame, layout, help);
 
@@ -186,7 +192,7 @@ fn draw_namespaces(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawSta
     let namespaces = draw_state.resources.namespaces;
     let content_list = List::new(
         namespaces
-            .namespaces
+            .filtered_namespaces
             .iter()
             .map(|namespace| namespace.name.to_string()),
     )
@@ -202,6 +208,7 @@ fn draw_topics(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawState) 
     let help = vec![
         LabeledItem::help("<esc>", "back"),
         LabeledItem::help("<enter>", "subs"),
+        LabeledItem::help("/", "search"),
         LabeledItem::help("<c-s>", "listen"),
     ];
     draw_help(frame, layout, help);
@@ -224,7 +231,7 @@ fn draw_topics(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawState) 
     let topics = draw_state.resources.topics;
     let content_list = List::new(
         topics
-            .topics
+            .filtered_topics
             .iter()
             .map(|topic| topic.name.to_string()),
     )
@@ -240,6 +247,7 @@ fn draw_subscriptions(frame: &mut Frame, layout: &LayoutChunks, draw_state: Draw
     let help = vec![
         LabeledItem::help("<esc>", "back"),
         LabeledItem::help("<enter>", "consumers"),
+        LabeledItem::help("/", "search"),
         LabeledItem::help("<c-d>", "delete"),
         LabeledItem::help("<c-p>", "skip backlog"),
         LabeledItem::help("s", "seek"),
@@ -272,7 +280,7 @@ fn draw_subscriptions(frame: &mut Frame, layout: &LayoutChunks, draw_state: Draw
 
     let table = Table::new(
         subscriptions
-            .subscriptions
+            .filtered_subscriptions
             .into_iter()
             .map(|sub| {
                 Row::new(vec![
@@ -294,7 +302,10 @@ fn draw_subscriptions(frame: &mut Frame, layout: &LayoutChunks, draw_state: Draw
 }
 
 fn draw_consumers(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawState) {
-    let help = vec![LabeledItem::help("<esc>", "back")];
+    let help = vec![
+        LabeledItem::help("<esc>", "back"),
+        LabeledItem::help("/", "search"),
+    ];
     draw_help(frame, layout, help);
 
     let empty_string = String::new();
@@ -321,13 +332,16 @@ fn draw_consumers(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
     let consumers = draw_state.resources.consumers;
 
     let table = Table::new(
-        consumers.consumers.into_iter().map(|consumer| {
-            Row::new(vec![
-                Cell::new(consumer.name),
-                Cell::new(consumer.connected_since),
-                Cell::new(consumer.unacked_messages.to_string()),
-            ])
-        }),
+        consumers
+            .filtered_consumers
+            .into_iter()
+            .map(|consumer| {
+                Row::new(vec![
+                    Cell::new(consumer.name),
+                    Cell::new(consumer.connected_since),
+                    Cell::new(consumer.unacked_messages.to_string()),
+                ])
+            }),
         widths,
     )
     .header(Row::new(vec![
@@ -380,7 +394,7 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
         LabeledItem::help("<tab>", "cycle panels"),
         LabeledItem::help("s", "seek"),
         LabeledItem::help("y", "copy to clipboard"),
-        LabeledItem::help("/", "toggle search"),
+        LabeledItem::help("/", "search"),
     ];
     draw_help(frame, layout, help);
 
@@ -529,77 +543,61 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
 }
 
 fn to_pretty_json(body: Vec<u8>) -> String {
-    let pretty = serde_json::from_slice::<serde_json::Value>(&body).and_then(|json_value| serde_json::to_string_pretty(&json_value));
+    let pretty = serde_json::from_slice::<serde_json::Value>(&body)
+        .and_then(|json_value| serde_json::to_string_pretty(&json_value));
 
     pretty.unwrap_or(String::from_utf8(body).unwrap_or("can't decode the body".to_string()))
 }
 
 fn to_json_string(body: Vec<u8>) -> String {
-    let pretty = serde_json::from_slice::<serde_json::Value>(&body).and_then(|json_value| serde_json::to_string(&json_value));
+    let pretty = serde_json::from_slice::<serde_json::Value>(&body)
+        .and_then(|json_value| serde_json::to_string(&json_value));
 
     pretty.unwrap_or(String::from_utf8(body).unwrap_or("can't decode the body".to_string()))
 }
 
 fn make_layout(frame: &mut Frame, draw_state: &DrawState) -> LayoutChunks {
-    match draw_state.info_to_show {
-        Some(_) => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(7),
-                    Constraint::Percentage(100),
-                    Constraint::Length(1),
-                ])
-                .split(frame.size());
+    let search_contstraint = if let Some(_) = draw_state.resource_search {
+        Constraint::Length(3)
+    } else {
+        Constraint::Length(0)
+    };
 
-            let header_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(40),
-                ])
-                .split(chunks[0]);
+    let info_constraint = if let Some(_) = draw_state.resource_search {
+        Constraint::Length(1)
+    } else {
+        Constraint::Length(0)
+    };
 
-            LayoutChunks {
-                header: HeaderLayout {
-                    info_rect: header_chunks[0],
-                    help_rects: vec![header_chunks[1], header_chunks[2]],
-                    logo: header_chunks[3],
-                },
-                message: Some(chunks[2]),
-                main: chunks[1],
-            }
-        }
-        None => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Length(7), Constraint::Percentage(100)])
-                .split(frame.size());
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7),
+            search_contstraint,
+            Constraint::Percentage(100),
+            info_constraint,
+        ])
+        .split(frame.size());
 
-            let header_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(40),
-                ])
-                .split(chunks[0]);
+    let header_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(40),
+        ])
+        .split(chunks[0]);
 
-            let main = chunks[1];
-
-            LayoutChunks {
-                header: HeaderLayout {
-                    info_rect: header_chunks[0],
-                    help_rects: vec![header_chunks[1], header_chunks[2]],
-                    logo: header_chunks[3],
-                },
-                message: None,
-                main,
-            }
-        }
+    LayoutChunks {
+        header: HeaderLayout {
+            info_rect: header_chunks[0],
+            help_rects: vec![header_chunks[1], header_chunks[2]],
+            logo: header_chunks[3],
+        },
+        search: chunks[1],
+        main: chunks[2],
+        message: chunks[3],
     }
 }
 
@@ -644,12 +642,29 @@ fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<LabeledIt
         .for_each(|(i, p)| frame.render_widget(p, layout.header.help_rects[i]));
 }
 
+fn draw_resource_search(frame: &mut Frame, draw_state: &DrawState, layout: &LayoutChunks) {
+    if let Some(search) = &draw_state.resource_search {
+        let block = Block::default()
+            .borders(Borders::all())
+            .border_type(if search.expecting_input {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            })
+            .border_style(Style::new().fg(Color::Magenta))
+            .title("Search")
+            .title_style(Style::default().fg(Color::Magenta));
+
+        let paragraph = Paragraph::new(search.value.clone())
+            .alignment(Alignment::Left)
+            .block(block);
+
+        frame.render_widget(paragraph, layout.search)
+    }
+}
+
 fn draw_notification(frame: &mut Frame, draw_state: &DrawState, layout: &LayoutChunks) {
-    if let Some((info, rect)) = draw_state
-        .info_to_show
-        .as_ref()
-        .zip(layout.message)
-    {
+    if let Some(info) = draw_state.info_to_show.as_ref() {
         let block = Block::default()
             .borders(Borders::NONE)
             .padding(Padding::horizontal(1));
@@ -664,7 +679,7 @@ fn draw_notification(frame: &mut Frame, draw_state: &DrawState, layout: &LayoutC
             .style(Style::default().fg(color))
             .block(block);
 
-        frame.render_widget(paragraph, rect)
+        frame.render_widget(paragraph, layout.message)
     }
 }
 

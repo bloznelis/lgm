@@ -27,7 +27,7 @@ use std::{
 };
 use update::{
     App, ConfirmedCommand, Consumers, Listening, Namespace, Namespaces, PulsarApp, Resource,
-    Resources, SelectedPanel, Subscriptions, Tenant, Tenants, Topics,
+    Resources, Search, SelectedPanel, Subscriptions, Tenant, Tenants, Topics,
 };
 
 use crossterm::{
@@ -152,20 +152,28 @@ async fn run(args: Args) -> anyhow::Result<()> {
         active_resource: Resource::Namespaces,
         resources: Resources {
             tenants: Tenants {
-                tenants: vec![Tenant { name: default_tenant }],
+                tenants: vec![Tenant { name: default_tenant.clone() }],
+                filtered_tenants: vec![Tenant { name: default_tenant }],
                 cursor: Some(0),
             },
             namespaces: Namespaces {
-                namespaces,
+                namespaces: namespaces.clone(),
+                filtered_namespaces: namespaces,
                 cursor: Some(0), // FIXME: will crash on empty namespaces
             },
-            topics: Topics { topics: vec![], cursor: None },
+            topics: Topics {
+                topics: vec![],
+                filtered_topics: vec![],
+                cursor: None,
+            },
             subscriptions: Subscriptions {
                 subscriptions: vec![],
+                filtered_subscriptions: vec![],
                 cursor: None,
             },
             consumers: Consumers {
                 consumers: vec![],
+                filtered_consumers: vec![],
                 cursor: None,
             },
             listening: Listening {
@@ -181,6 +189,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
         lgm_version: env!("CARGO_PKG_VERSION").to_string(),
         latest_lgm_version: None,
         receiver,
+        resource_search: None,
     };
 
     let mut stdout = io::stdout();
@@ -267,6 +276,9 @@ fn listen_input(sender: Sender<AppEvent>) {
                     Some(AppEvent::Control(ControlEvent::Skip))
                 }
                 KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
+                    Some(AppEvent::Control(ControlEvent::ClearInput))
+                }
+                KeyCode::Char('w') if key.modifiers == KeyModifiers::CONTROL => {
                     Some(AppEvent::Control(ControlEvent::ClearInput))
                 }
                 KeyCode::Char('s') => Some(AppEvent::Control(ControlEvent::Seek)),

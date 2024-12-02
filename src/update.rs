@@ -28,31 +28,140 @@ use crate::{draw, pulsar_listener, AppEvent, ControlEvent};
 #[derive(Clone)]
 pub struct Tenants {
     pub tenants: Vec<Tenant>,
+    pub filtered_tenants: Vec<Tenant>,
     pub cursor: Option<usize>,
+}
+
+impl Tenants {
+    fn filter(&mut self, search: &str) -> () {
+        self.filtered_tenants = self
+            .tenants
+            .clone()
+            .into_iter()
+            .filter(|value| value.name.contains(search))
+            .collect();
+
+        reset_cursor(&self.filtered_tenants, &mut self.cursor);
+    }
+
+    fn reset_search(&mut self) -> () {
+        self.filtered_tenants = self.tenants.clone();
+        reset_cursor(&self.filtered_tenants, &mut self.cursor);
+    }
 }
 
 #[derive(Clone)]
 pub struct Namespaces {
     pub namespaces: Vec<Namespace>,
+    pub filtered_namespaces: Vec<Namespace>,
     pub cursor: Option<usize>,
+}
+
+impl Namespaces {
+    fn filter(&mut self, search: &str) -> () {
+        self.filtered_namespaces = self
+            .namespaces
+            .clone()
+            .into_iter()
+            .filter(|value| value.name.contains(search))
+            .collect();
+
+        reset_cursor(&self.filtered_namespaces, &mut self.cursor);
+    }
+
+    fn reset_search(&mut self) -> () {
+        self.filtered_namespaces = self.namespaces.clone();
+        reset_cursor(&self.filtered_namespaces, &mut self.cursor);
+    }
 }
 
 #[derive(Clone)]
 pub struct Topics {
     pub topics: Vec<Topic>,
+    pub filtered_topics: Vec<Topic>,
     pub cursor: Option<usize>,
+}
+
+impl Topics {
+    fn filter(&mut self, search: &str) -> () {
+        self.filtered_topics = self
+            .topics
+            .clone()
+            .into_iter()
+            .filter(|value| value.name.contains(search))
+            .collect();
+
+        reset_cursor(&self.filtered_topics, &mut self.cursor);
+    }
+
+    fn reset_search(&mut self) -> () {
+        self.filtered_topics = self.topics.clone();
+        reset_cursor(&self.filtered_topics, &mut self.cursor);
+    }
 }
 
 #[derive(Clone)]
 pub struct Subscriptions {
     pub subscriptions: Vec<Subscription>,
+    pub filtered_subscriptions: Vec<Subscription>,
     pub cursor: Option<usize>,
+}
+
+impl Subscriptions {
+    fn filter(&mut self, search: &str) -> () {
+        self.filtered_subscriptions = self
+            .subscriptions
+            .clone()
+            .into_iter()
+            .filter(|value| value.name.contains(search))
+            .collect();
+
+        reset_cursor(&self.filtered_subscriptions, &mut self.cursor);
+    }
+
+    fn reset_search(&mut self) -> () {
+        self.filtered_subscriptions = self.subscriptions.clone();
+        reset_cursor(&self.filtered_subscriptions, &mut self.cursor);
+    }
 }
 
 #[derive(Clone)]
 pub struct Consumers {
     pub consumers: Vec<Consumer>,
+    pub filtered_consumers: Vec<Consumer>,
     pub cursor: Option<usize>,
+}
+
+impl Consumers {
+    fn filter(&mut self, search: &str) -> () {
+        self.filtered_consumers = self
+            .consumers
+            .clone()
+            .into_iter()
+            .filter(|value| value.name.contains(search))
+            .collect();
+
+        reset_cursor(&self.filtered_consumers, &mut self.cursor);
+    }
+
+    fn reset_search(&mut self) -> () {
+        self.filtered_consumers = self.consumers.clone();
+        reset_cursor(&self.filtered_consumers, &mut self.cursor);
+    }
+}
+
+fn reset_cursor<A>(coll: &Vec<A>, maybe_cursor: &mut Option<usize>) {
+    *maybe_cursor = if let Some(cursor) = maybe_cursor {
+        if coll.get(*cursor).is_some() {
+            *maybe_cursor
+        } else {
+            None
+        }
+    } else if coll.is_empty() {
+        None
+    } else {
+        Some(0)
+    }
 }
 
 #[derive(Clone)]
@@ -227,31 +336,59 @@ pub struct Resources {
 }
 
 impl Resources {
+    fn apply_search(&mut self, active_resource: &Resource, search_value: &str) {
+        match active_resource {
+            Resource::Tenants => self.tenants.filter(search_value),
+            Resource::Namespaces => self.namespaces.filter(search_value),
+            Resource::Topics => self.topics.filter(search_value),
+            Resource::Subscriptions => self.subscriptions.filter(search_value),
+            Resource::Consumers => self.consumers.filter(search_value),
+            Resource::Listening { .. } => (),
+        }
+    }
+
+    fn reset_search(&mut self, active_resource: &Resource) {
+        match active_resource {
+            Resource::Tenants => self.tenants.reset_search(),
+            Resource::Namespaces => self.namespaces.reset_search(),
+            Resource::Topics => self.topics.reset_search(),
+            Resource::Subscriptions => self.subscriptions.reset_search(),
+            Resource::Consumers => self.consumers.reset_search(),
+            Resource::Listening { .. } => (),
+        }
+    }
+
     fn cursor_up(&mut self, active_resource: &Resource) {
         match active_resource {
             Resource::Tenants => {
-                self.tenants.cursor = cursor_up(self.tenants.cursor, self.tenants.tenants.len())
+                self.tenants.cursor =
+                    cursor_up(self.tenants.cursor, self.tenants.filtered_tenants.len())
             }
 
             Resource::Namespaces => {
-                self.namespaces.cursor =
-                    cursor_up(self.namespaces.cursor, self.namespaces.namespaces.len())
+                self.namespaces.cursor = cursor_up(
+                    self.namespaces.cursor,
+                    self.namespaces.filtered_namespaces.len(),
+                )
             }
 
             Resource::Topics => {
-                self.topics.cursor = cursor_up(self.topics.cursor, self.topics.topics.len())
+                self.topics.cursor =
+                    cursor_up(self.topics.cursor, self.topics.filtered_topics.len())
             }
 
             Resource::Subscriptions => {
                 self.subscriptions.cursor = cursor_up(
                     self.subscriptions.cursor,
-                    self.subscriptions.subscriptions.len(),
+                    self.subscriptions.filtered_subscriptions.len(),
                 )
             }
 
             Resource::Consumers => {
-                self.consumers.cursor =
-                    cursor_up(self.consumers.cursor, self.consumers.consumers.len())
+                self.consumers.cursor = cursor_up(
+                    self.consumers.cursor,
+                    self.consumers.filtered_consumers.len(),
+                )
             }
 
             Resource::Listening { .. } => {
@@ -266,26 +403,32 @@ impl Resources {
     fn cursor_down(&mut self, active_resource: &Resource) {
         match active_resource {
             Resource::Tenants => {
-                self.tenants.cursor = cursor_down(self.tenants.cursor, self.tenants.tenants.len())
+                self.tenants.cursor =
+                    cursor_down(self.tenants.cursor, self.tenants.filtered_tenants.len())
             }
             Resource::Namespaces => {
-                self.namespaces.cursor =
-                    cursor_down(self.namespaces.cursor, self.namespaces.namespaces.len())
+                self.namespaces.cursor = cursor_down(
+                    self.namespaces.cursor,
+                    self.namespaces.filtered_namespaces.len(),
+                )
             }
             Resource::Topics => {
-                self.topics.cursor = cursor_down(self.topics.cursor, self.topics.topics.len())
+                self.topics.cursor =
+                    cursor_down(self.topics.cursor, self.topics.filtered_topics.len())
             }
 
             Resource::Subscriptions => {
                 self.subscriptions.cursor = cursor_down(
                     self.subscriptions.cursor,
-                    self.subscriptions.subscriptions.len(),
+                    self.subscriptions.filtered_subscriptions.len(),
                 )
             }
 
             Resource::Consumers => {
-                self.consumers.cursor =
-                    cursor_down(self.consumers.cursor, self.consumers.consumers.len())
+                self.consumers.cursor = cursor_down(
+                    self.consumers.cursor,
+                    self.consumers.filtered_consumers.len(),
+                )
             }
 
             Resource::Listening { .. } => {
@@ -300,7 +443,7 @@ impl Resources {
     pub fn selected_tenant(&self) -> Option<&Tenant> {
         self.tenants
             .cursor
-            .and_then(|cursor| self.tenants.tenants.get(cursor))
+            .and_then(|cursor| self.tenants.filtered_tenants.get(cursor))
     }
 
     pub fn selected_tenant_name(&self) -> Option<&str> {
@@ -311,7 +454,7 @@ impl Resources {
     pub fn selected_namespace(&self) -> Option<&Namespace> {
         self.namespaces
             .cursor
-            .and_then(|cursor| self.namespaces.namespaces.get(cursor))
+            .and_then(|cursor| self.namespaces.filtered_namespaces.get(cursor))
     }
 
     pub fn selected_namespace_name(&self) -> Option<&str> {
@@ -322,7 +465,7 @@ impl Resources {
     pub fn selected_topic(&self) -> Option<&Topic> {
         self.topics
             .cursor
-            .and_then(|cursor| self.topics.topics.get(cursor))
+            .and_then(|cursor| self.topics.filtered_topics.get(cursor))
     }
 
     pub fn selected_topic_name(&self) -> Option<&str> {
@@ -331,9 +474,11 @@ impl Resources {
     }
 
     pub fn selected_subscription(&self) -> Option<&Subscription> {
-        self.subscriptions
-            .cursor
-            .and_then(|cursor| self.subscriptions.subscriptions.get(cursor))
+        self.subscriptions.cursor.and_then(|cursor| {
+            self.subscriptions
+                .filtered_subscriptions
+                .get(cursor)
+        })
     }
 
     pub fn selected_subscription_name(&self) -> Option<&str> {
@@ -349,10 +494,13 @@ impl Resources {
 }
 
 pub fn selected_topic(resources: &Resources) -> Option<Topic> {
-    resources
-        .topics
-        .cursor
-        .and_then(|cursor| resources.topics.topics.get(cursor).cloned())
+    resources.topics.cursor.and_then(|cursor| {
+        resources
+            .topics
+            .filtered_topics
+            .get(cursor)
+            .cloned()
+    })
 }
 
 fn cursor_up(current: Option<usize>, col_size: usize) -> Option<usize> {
@@ -381,6 +529,21 @@ fn cursor_down(current: Option<usize>, col_size: usize) -> Option<usize> {
     }
 }
 
+#[derive(Clone)]
+pub struct Search {
+    pub value: String,
+    pub expecting_input: bool,
+}
+
+impl Search {
+    fn new() -> Search {
+        Search {
+            value: String::new(),
+            expecting_input: true,
+        }
+    }
+}
+
 pub struct App {
     pub pulsar: PulsarApp,
     pub receiver: Receiver<AppEvent>,
@@ -393,11 +556,13 @@ pub struct App {
     pub cluster_name: String,
     pub lgm_version: String,
     pub latest_lgm_version: Option<String>,
+    pub resource_search: Option<Search>,
 }
 
 #[derive(Clone)]
 pub struct DrawState {
     pub info_to_show: Option<InfoToShow>,
+    pub resource_search: Option<Search>,
     pub confirmation_modal: Option<ConfirmationModal>,
     pub input_modal: Option<InputModal>,
     pub active_resource: Resource,
@@ -411,6 +576,7 @@ impl From<&mut App> for DrawState {
     fn from(value: &mut App) -> Self {
         DrawState {
             info_to_show: value.info_to_show.clone(),
+            resource_search: value.resource_search.clone(),
             confirmation_modal: value.confirmation_modal.clone(),
             input_modal: value.input_modal.clone(),
             active_resource: value.active_resource.clone(),
@@ -445,7 +611,12 @@ pub async fn update<'a>(
                 // XXX: Allow only a subset of events if input is expected
                 AppEvent::Control(control_event)
                     if (matches!(app.resources.listening.panel, SelectedPanel::Search)
-                        || app.input_modal.is_some())
+                        || app.input_modal.is_some()
+                        || app
+                            .resource_search
+                            .as_ref()
+                            .map(|s| s.expecting_input)
+                            .unwrap_or(false))
                         && matches!(
                             control_event,
                             ControlEvent::Yank
@@ -459,6 +630,13 @@ pub async fn update<'a>(
                 AppEvent::Control(ControlEvent::ClearInput) => {
                     if matches!(app.resources.listening.panel, SelectedPanel::Search) {
                         app.resources.listening.search = Some(String::new());
+                    } else {
+                        if let Some(search) = &mut app.resource_search {
+                            if search.expecting_input {
+                                search.value = String::new();
+                                app.resources.reset_search(&app.active_resource);
+                            }
+                        }
                     }
                 }
                 AppEvent::Input(input) => {
@@ -494,6 +672,21 @@ pub async fn update<'a>(
 
                         if let Some(char) = char {
                             input_modal.input = format!("{}{}", input_modal.input, char)
+                        }
+                    }
+
+                    if let Some(search) = &mut app.resource_search {
+                        if search.expecting_input {
+                            let char = match input {
+                                KeyCode::Char(char) => Some(char),
+                                _ => None,
+                            };
+
+                            if let Some(char) = char {
+                                search.value = format!("{}{}", search.value, char);
+                                app.resources
+                                    .apply_search(&app.active_resource, &search.value);
+                            }
                         }
                     }
                 }
@@ -634,6 +827,21 @@ pub async fn update<'a>(
                                     app.resources.listening.search = Some(String::new());
                                 }
                             },
+                        }
+                    } else {
+                        // When not Listening
+                        match &mut app.resource_search {
+                            Some(search) => {
+                                if search.expecting_input {
+                                    app.resource_search = None;
+                                    app.resources.reset_search(&app.active_resource);
+                                } else {
+                                    search.expecting_input = true
+                                }
+                            }
+                            None => {
+                                app.resource_search = Some(Search::new());
+                            }
                         }
                     }
                 }
@@ -812,10 +1020,27 @@ pub async fn update<'a>(
                             input_modal.input = new;
                         }
                     }
+
+                    if let Some(search) = &mut app.resource_search {
+                        if search.expecting_input {
+                            let len = search.value.len();
+                            if len > 0 {
+                                search.value = search.value[0..len - 1].to_owned()
+                            } else {
+                                search.value = String::new()
+                            };
+
+                            app.resources
+                                .apply_search(&app.active_resource, &search.value)
+                        }
+                    }
                 }
 
                 AppEvent::Control(ControlEvent::Back | ControlEvent::Esc) => {
-                    if app.input_modal.is_some() {
+                    if let Some(..) = &mut app.resource_search {
+                        app.resource_search = None;
+                        app.resources.reset_search(&app.active_resource);
+                    } else if app.input_modal.is_some() {
                         app.input_modal = None;
                     } else if app.confirmation_modal.is_some() {
                         app.confirmation_modal = None;
@@ -833,6 +1058,8 @@ pub async fn update<'a>(
                                             .tenants
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Tenants;
+                                        app.resource_search = None;
+                                        app.resources.reset_search(&app.active_resource);
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -857,6 +1084,8 @@ pub async fn update<'a>(
                                             .namespaces
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Namespaces;
+                                        app.resource_search = None;
+                                        app.resources.reset_search(&app.active_resource);
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -879,6 +1108,8 @@ pub async fn update<'a>(
                                     Ok(topics) => {
                                         app.resources.topics.topics = topics;
                                         app.active_resource = Resource::Topics;
+                                        app.resource_search = None;
+                                        app.resources.reset_search(&app.active_resource);
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -906,6 +1137,8 @@ pub async fn update<'a>(
                                             .subscriptions
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Subscriptions;
+                                        app.resource_search = None;
+                                        app.resources.reset_search(&app.active_resource);
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -942,6 +1175,8 @@ pub async fn update<'a>(
                                                 app.resources.listening.search = None;
                                                 app.resources.listening.panel = SelectedPanel::Left;
                                                 app.active_resource = Resource::Topics;
+                                                app.resource_search = None;
+                                                app.resources.reset_search(&app.active_resource);
 
                                                 if let Some(sender) =
                                                     app.pulsar.active_sub_handle.take()
@@ -975,22 +1210,17 @@ pub async fn update<'a>(
                         if app.resources.listening.cursor.is_none() {
                             app.resources.listening.cursor = Some(0)
                         }
-
-                        //This is annoying
-                        //else {
-                        //    app.resources.listening.cursor = Some(
-                        //        app.resources
-                        //            .listening
-                        //            .filtered_messages
-                        //            .len()
-                        //            .saturating_sub(1),
-                        //    );
-                        //}
                     }
                 }
                 AppEvent::Control(ControlEvent::Terminate) => break,
                 AppEvent::Control(ControlEvent::Enter) => {
                     app.confirmation_modal = None;
+                    if let Some(search) = &mut app.resource_search {
+                        if search.expecting_input {
+                            search.expecting_input = false;
+                            continue;
+                        }
+                    };
                     match app.active_resource.clone() {
                         Resource::Tenants => {
                             if let Some(tenant) = app.resources.selected_tenant() {
@@ -1012,6 +1242,8 @@ pub async fn update<'a>(
                                             .namespaces
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Namespaces;
+                                        app.resource_search = None;
+                                        app.resources.reset_search(&app.active_resource);
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -1041,6 +1273,8 @@ pub async fn update<'a>(
                                             .topics
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Topics;
+                                        app.resource_search = None;
+                                        app.resources.reset_search(&app.active_resource);
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -1122,6 +1356,8 @@ pub async fn update<'a>(
                                             .consumers
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Consumers;
+                                        app.resource_search = None;
+                                        app.resources.reset_search(&app.active_resource);
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -1229,6 +1465,8 @@ async fn refresh_subscriptions(app: &mut App) {
                 .subscriptions
                 .sort_by(|a, b| a.name.cmp(&b.name));
             app.active_resource = Resource::Subscriptions;
+            app.resource_search = None;
+            app.resources.reset_search(&app.active_resource);
         }
         Err(err) => {
             show_error_msg(app, format!("Failed to fetch subscriptions :[ {:?}", err));
