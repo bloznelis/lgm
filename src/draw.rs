@@ -1,6 +1,6 @@
 use std::usize;
 
-use ratatui::layout::{self, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Cell, Row, Table, TableState, Wrap};
@@ -563,7 +563,7 @@ fn make_layout(frame: &mut Frame, draw_state: &DrawState) -> LayoutChunks {
         Constraint::Length(0)
     };
 
-    let info_constraint = if let Some(_) = draw_state.resource_search {
+    let info_constraint = if let Some(_) = draw_state.info_to_show {
         Constraint::Length(1)
     } else {
         Constraint::Length(0)
@@ -653,7 +653,7 @@ fn draw_resource_search(frame: &mut Frame, draw_state: &DrawState, layout: &Layo
             })
             .border_style(Style::new().fg(Color::Magenta))
             .title("Search")
-            .title_style(Style::default().fg(Color::Magenta));
+            .title_style(Style::default().fg(Color::Green));
 
         let paragraph = Paragraph::new(search.value.clone())
             .alignment(Alignment::Left)

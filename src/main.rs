@@ -27,7 +27,7 @@ use std::{
 };
 use update::{
     App, ConfirmedCommand, Consumers, Listening, Namespace, Namespaces, PulsarApp, Resource,
-    Resources, Search, SelectedPanel, Subscriptions, Tenant, Tenants, Topics,
+    Resources,  SelectedPanel, Subscriptions, Tenant, Tenants, Topics,
 };
 
 use crossterm::{
