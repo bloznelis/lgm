@@ -2,7 +2,6 @@ use futures::TryStreamExt;
 use pulsar::consumer::InitialPosition;
 use pulsar::{Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::panic;
 use std::sync::{mpsc::Sender, Arc};
 
