@@ -943,6 +943,8 @@ pub async fn update<'a>(
                             app.resources.listening.messages = vec![];
                             app.resources.listening.filtered_messages = vec![];
                             app.resources.listening.search = None;
+                            app.resource_search = None;
+                            app.resources.reset_search(&app.active_resource);
                             let new_pulsar = app.pulsar.client.clone();
                             let new_sender = app.pulsar.sender.clone();
                             let (tx, rx) = oneshot::channel::<()>();
