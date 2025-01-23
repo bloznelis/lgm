@@ -651,9 +651,9 @@ fn draw_resource_search(frame: &mut Frame, draw_state: &DrawState, layout: &Layo
             } else {
                 BorderType::Plain
             })
-            .border_style(Style::new().fg(Color::Magenta))
+            .border_style(Style::new().fg(Color::Cyan))
             .title("Search")
-            .title_style(Style::default().fg(Color::Green));
+            .title_style(Style::default().fg(Color::Blue));
 
         let paragraph = Paragraph::new(search.value.clone())
             .alignment(Alignment::Left)
