@@ -6,13 +6,13 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Cell, Row, Table, TableState, Wrap};
 
 use ratatui::{
+    Frame,
     prelude::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
     widgets::{Block, BorderType, Borders, Clear, List, ListState, Padding, Paragraph},
-    Frame,
 };
 
-use crate::update::{ConfirmationModal, DrawState, InputModal, Listening, Subscription, Tenants};
+use crate::update::{ConfirmationModal, DrawState, InputModal, Subscription, Tenants};
 use crate::{Resource, SelectedPanel};
 
 struct HeaderLayout {
@@ -369,25 +369,6 @@ fn style_backlog_cell(backlog: i64) -> Cell<'static> {
     Cell::new(format!("{}", backlog)).style(style)
 }
 
-fn draw_search(frame: &mut Frame, listening: Listening, rect: Option<Rect>) {
-    if let (Some(search), Some(rect)) = (listening.search.clone(), rect) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(if matches!(listening.panel, SelectedPanel::Search) {
-                BorderType::Double
-            } else {
-                BorderType::Plain
-            })
-            .title("Search".to_string())
-            .title_alignment(Alignment::Center)
-            .title_style(Style::default().fg(Color::Green));
-
-        let paragraph = Paragraph::new(search).block(block);
-
-        frame.render_widget(paragraph, rect);
-    }
-}
-
 fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawState) {
     let help = vec![
         LabeledItem::help("<esc>", "back"),
@@ -436,17 +417,7 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
 
     let listening = draw_state.resources.listening;
 
-    let (left_rect, search_rect) = match &listening.search {
-        Some(_) => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Length(3), Constraint::Percentage(100)])
-                .split(chunks[0]);
-
-            (chunks[1], Some(chunks[0]))
-        }
-        None => (chunks[0], None),
-    };
+    let left_rect = chunks[0];
 
     let horizontal_space: usize = (left_rect.width - 10).into();
     let right_rect = chunks[1];
@@ -508,12 +479,12 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
                 .search
                 .as_ref()
                 .and_then(|search| {
-                    if line.contains(search) && !search.is_empty() {
-                        line.split_once(search)
+                    if !search.value.is_empty() && line.contains(&search.value) {
+                        line.split_once(&search.value)
                             .map(|(first_half, second_half)| {
                                 Line::from(vec![
                                     Span::raw(first_half),
-                                    Span::raw(search.clone())
+                                    Span::raw(search.value.clone())
                                         .style(Style::default().fg(Color::Black).bg(Color::Green)),
                                     Span::raw(second_half),
                                 ])
@@ -528,7 +499,6 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
 
     let scroll_offset = match listening.panel {
         SelectedPanel::Left => (0, 0),
-        SelectedPanel::Search => (0, 0),
         SelectedPanel::Right { scroll_offset } => (scroll_offset, 0),
     };
 
@@ -537,7 +507,6 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
         .wrap(Wrap { trim: false })
         .scroll(scroll_offset);
 
-    draw_search(frame, listening, search_rect);
     frame.render_stateful_widget(content_list, left_rect, &mut state);
     frame.render_widget(preview_paragraph, right_rect);
 }
@@ -557,7 +526,10 @@ fn to_json_string(body: Vec<u8>) -> String {
 }
 
 fn make_layout(frame: &mut Frame, draw_state: &DrawState) -> LayoutChunks {
-    let search_contstraint = if let Some(_) = draw_state.resource_search {
+    let search_contstraint = if let Some(_) = &draw_state
+        .resources
+        .get_active_resource_search(&draw_state.active_resource)
+    {
         Constraint::Length(3)
     } else {
         Constraint::Length(0)
@@ -643,7 +615,10 @@ fn draw_help(frame: &mut Frame, layout: &LayoutChunks, help_items: Vec<LabeledIt
 }
 
 fn draw_resource_search(frame: &mut Frame, draw_state: &DrawState, layout: &LayoutChunks) {
-    if let Some(search) = &draw_state.resource_search {
+    if let Some(search) = &draw_state
+        .resources
+        .get_active_resource_search(&draw_state.active_resource)
+    {
         let block = Block::default()
             .borders(Borders::all())
             .border_type(if search.expecting_input {

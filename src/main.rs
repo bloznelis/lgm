@@ -155,26 +155,31 @@ async fn run(args: Args) -> anyhow::Result<()> {
                 tenants: vec![Tenant { name: default_tenant.clone() }],
                 filtered_tenants: vec![Tenant { name: default_tenant }],
                 cursor: Some(0),
+                search: None,
             },
             namespaces: Namespaces {
                 namespaces: namespaces.clone(),
                 filtered_namespaces: namespaces,
                 cursor: Some(0), // FIXME: will crash on empty namespaces
+                search: None,
             },
             topics: Topics {
                 topics: vec![],
                 filtered_topics: vec![],
                 cursor: None,
+                search: None,
             },
             subscriptions: Subscriptions {
                 subscriptions: vec![],
                 filtered_subscriptions: vec![],
                 cursor: None,
+                search: None,
             },
             consumers: Consumers {
                 consumers: vec![],
                 filtered_consumers: vec![],
                 cursor: None,
+                search: None,
             },
             listening: Listening {
                 messages: vec![],
@@ -189,7 +194,6 @@ async fn run(args: Args) -> anyhow::Result<()> {
         lgm_version: env!("CARGO_PKG_VERSION").to_string(),
         latest_lgm_version: None,
         receiver,
-        resource_search: None,
     };
 
     let mut stdout = io::stdout();

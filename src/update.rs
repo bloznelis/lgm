@@ -12,41 +12,54 @@ use std::io::Stdout;
 use std::usize;
 use std::{
     sync::{
-        mpsc::{Receiver, Sender},
         Arc,
+        mpsc::{Receiver, Sender},
     },
     time::Duration,
 };
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 
 use crate::auth::Token;
-use crate::{draw, pulsar_listener, AppEvent, ControlEvent};
+use crate::{AppEvent, ControlEvent, draw, pulsar_listener};
 
 #[derive(Clone)]
 pub struct Tenants {
     pub tenants: Vec<Tenant>,
     pub filtered_tenants: Vec<Tenant>,
     pub cursor: Option<usize>,
+    pub search: Option<Search>,
+}
+
+impl Filterable<Tenant> for Tenants {
+    fn all_items(&self) -> &Vec<Tenant> {
+        &self.tenants
+    }
+
+    fn filtered_items_mut(&mut self) -> &mut Vec<Tenant> {
+        &mut self.filtered_tenants
+    }
+
+    fn cursor_mut(&mut self) -> &mut Option<usize> {
+        &mut self.cursor
+    }
+
+    fn search(&self) -> &Option<Search> {
+        &self.search
+    }
 }
 
 impl Tenants {
-    fn filter(&mut self, search: &str) -> () {
-        self.filtered_tenants = self
-            .tenants
-            .clone()
-            .into_iter()
-            .filter(|value| value.name.contains(search))
-            .collect();
-
-        reset_cursor(&self.filtered_tenants, &mut self.cursor);
-    }
-
     fn reset_search(&mut self) -> () {
         self.filtered_tenants = self.tenants.clone();
         reset_cursor(&self.filtered_tenants, &mut self.cursor);
+        self.search = None;
+    }
+
+    fn init_search(&mut self) -> () {
+        self.search = Some(Search::new());
     }
 }
 
@@ -55,23 +68,36 @@ pub struct Namespaces {
     pub namespaces: Vec<Namespace>,
     pub filtered_namespaces: Vec<Namespace>,
     pub cursor: Option<usize>,
+    pub search: Option<Search>,
+}
+
+impl Filterable<Namespace> for Namespaces {
+    fn all_items(&self) -> &Vec<Namespace> {
+        &self.namespaces
+    }
+
+    fn filtered_items_mut(&mut self) -> &mut Vec<Namespace> {
+        &mut self.filtered_namespaces
+    }
+
+    fn cursor_mut(&mut self) -> &mut Option<usize> {
+        &mut self.cursor
+    }
+
+    fn search(&self) -> &Option<Search> {
+        &self.search
+    }
 }
 
 impl Namespaces {
-    fn filter(&mut self, search: &str) -> () {
-        self.filtered_namespaces = self
-            .namespaces
-            .clone()
-            .into_iter()
-            .filter(|value| value.name.contains(search))
-            .collect();
-
-        reset_cursor(&self.filtered_namespaces, &mut self.cursor);
-    }
-
     fn reset_search(&mut self) -> () {
         self.filtered_namespaces = self.namespaces.clone();
         reset_cursor(&self.filtered_namespaces, &mut self.cursor);
+        self.search = None;
+    }
+
+    fn init_search(&mut self) -> () {
+        self.search = Some(Search::new());
     }
 }
 
@@ -80,23 +106,65 @@ pub struct Topics {
     pub topics: Vec<Topic>,
     pub filtered_topics: Vec<Topic>,
     pub cursor: Option<usize>,
+    pub search: Option<Search>,
+}
+
+impl Filterable<Topic> for Topics {
+    fn all_items(&self) -> &Vec<Topic> {
+        &self.topics
+    }
+
+    fn filtered_items_mut(&mut self) -> &mut Vec<Topic> {
+        &mut self.filtered_topics
+    }
+
+    fn cursor_mut(&mut self) -> &mut Option<usize> {
+        &mut self.cursor
+    }
+
+    fn search(&self) -> &Option<Search> {
+        &self.search
+    }
 }
 
 impl Topics {
-    fn filter(&mut self, search: &str) -> () {
-        self.filtered_topics = self
-            .topics
-            .clone()
-            .into_iter()
-            .filter(|value| value.name.contains(search))
-            .collect();
-
-        reset_cursor(&self.filtered_topics, &mut self.cursor);
-    }
-
     fn reset_search(&mut self) -> () {
         self.filtered_topics = self.topics.clone();
         reset_cursor(&self.filtered_topics, &mut self.cursor);
+        self.search = None;
+    }
+
+    fn init_search(&mut self) -> () {
+        self.search = Some(Search::new());
+    }
+}
+
+pub trait Named {
+    fn name(&self) -> &str;
+}
+
+pub trait Filterable<T> {
+    fn all_items(&self) -> &Vec<T>;
+    fn filtered_items_mut(&mut self) -> &mut Vec<T>;
+    fn cursor_mut(&mut self) -> &mut Option<usize>;
+    fn search(&self) -> &Option<Search>;
+
+    fn filter(&mut self)
+    where
+        T: Clone + Named,
+    {
+        let filtered: Vec<T> = if let Some(search) = self.search() {
+            self.all_items()
+                .iter()
+                .cloned()
+                .filter(|item| item.name().contains(&search.value))
+                .collect()
+        } else {
+            self.all_items().clone()
+        };
+
+        reset_cursor(&filtered, self.cursor_mut());
+        *self.filtered_items_mut() = filtered;
     }
 }
 
@@ -105,23 +173,35 @@ pub struct Subscriptions {
     pub subscriptions: Vec<Subscription>,
     pub filtered_subscriptions: Vec<Subscription>,
     pub cursor: Option<usize>,
+    pub search: Option<Search>,
+}
+
+impl Filterable<Subscription> for Subscriptions {
+    fn all_items(&self) -> &Vec<Subscription> {
+        &self.subscriptions
+    }
+
+    fn filtered_items_mut(&mut self) -> &mut Vec<Subscription> {
+        &mut self.filtered_subscriptions
+    }
+
+    fn cursor_mut(&mut self) -> &mut Option<usize> {
+        &mut self.cursor
+    }
+
+    fn search(&self) -> &Option<Search> {
+        &self.search
+    }
 }
 
 impl Subscriptions {
-    fn filter(&mut self, search: &str) -> () {
-        self.filtered_subscriptions = self
-            .subscriptions
-            .clone()
-            .into_iter()
-            .filter(|value| value.name.contains(search))
-            .collect();
-
-        reset_cursor(&self.filtered_subscriptions, &mut self.cursor);
-    }
-
     fn reset_search(&mut self) -> () {
         self.filtered_subscriptions = self.subscriptions.clone();
         reset_cursor(&self.filtered_subscriptions, &mut self.cursor);
+        self.search = None;
+    }
+    fn init_search(&mut self) -> () {
+        self.search = Some(Search::new());
     }
 }
 
@@ -130,23 +210,36 @@ pub struct Consumers {
     pub consumers: Vec<Consumer>,
     pub filtered_consumers: Vec<Consumer>,
     pub cursor: Option<usize>,
+    pub search: Option<Search>,
+}
+
+impl Filterable<Consumer> for Consumers {
+    fn all_items(&self) -> &Vec<Consumer> {
+        &self.consumers
+    }
+
+    fn filtered_items_mut(&mut self) -> &mut Vec<Consumer> {
+        &mut self.filtered_consumers
+    }
+
+    fn cursor_mut(&mut self) -> &mut Option<usize> {
+        &mut self.cursor
+    }
+
+    fn search(&self) -> &Option<Search> {
+        &self.search
+    }
 }
 
 impl Consumers {
-    fn filter(&mut self, search: &str) -> () {
-        self.filtered_consumers = self
-            .consumers
-            .clone()
-            .into_iter()
-            .filter(|value| value.name.contains(search))
-            .collect();
-
-        reset_cursor(&self.filtered_consumers, &mut self.cursor);
-    }
-
     fn reset_search(&mut self) -> () {
         self.filtered_consumers = self.consumers.clone();
         reset_cursor(&self.filtered_consumers, &mut self.cursor);
+        self.search = None;
+    }
+
+    fn init_search(&mut self) -> () {
+        self.search = Some(Search::new());
     }
 }
 
@@ -170,15 +263,25 @@ pub struct Listening {
     pub filtered_messages: Vec<SubMessage>,
     pub panel: SelectedPanel,
     pub cursor: Option<usize>,
-    pub search: Option<String>,
+    pub search: Option<Search>,
 }
 
 impl Listening {
-    pub fn filter_messages(&mut self, reset_cursor: bool) {
+    fn reset_search(&mut self) -> () {
+        self.filtered_messages = self.messages.clone();
+        reset_cursor(&self.filtered_messages, &mut self.cursor);
+        self.search = None;
+    }
+
+    fn init_search(&mut self) -> () {
+        self.search = Some(Search::new());
+    }
+
+    pub fn filter(&mut self, reset_cursor: bool) {
         let messages = self.messages.clone();
         self.filtered_messages = match &self.search {
             Some(search) => {
-                let search = search.replace(' ', "");
+                let search = search.value.replace(' ', "");
 
                 messages
                     .into_iter()
@@ -228,7 +331,6 @@ impl std::fmt::Display for Resource {
 pub enum SelectedPanel {
     Left,
     Right { scroll_offset: u16 },
-    Search,
 }
 
 #[derive(Clone)]
@@ -252,15 +354,33 @@ pub struct Namespace {
     pub name: String,
 }
 
+impl Named for Namespace {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Tenant {
     pub name: String,
+}
+
+impl Named for Tenant {
+    fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Topic {
     pub name: String,
     pub fqn: String,
+}
+
+impl Named for Topic {
+    fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -271,11 +391,23 @@ pub struct Subscription {
     pub consumer_count: usize,
 }
 
+impl Named for Subscription {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Consumer {
     pub name: String,
     pub unacked_messages: i32,
     pub connected_since: String,
+}
+
+impl Named for Consumer {
+    fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -336,14 +468,79 @@ pub struct Resources {
 }
 
 impl Resources {
-    fn apply_search(&mut self, active_resource: &Resource, search_value: &str) {
+    pub fn get_active_resource_search(&self, active_resource: &Resource) -> &Option<Search> {
         match active_resource {
-            Resource::Tenants => self.tenants.filter(search_value),
-            Resource::Namespaces => self.namespaces.filter(search_value),
-            Resource::Topics => self.topics.filter(search_value),
-            Resource::Subscriptions => self.subscriptions.filter(search_value),
-            Resource::Consumers => self.consumers.filter(search_value),
-            Resource::Listening { .. } => (),
+            Resource::Tenants => &self.tenants.search,
+            Resource::Namespaces => &self.namespaces.search,
+            Resource::Topics => &self.topics.search,
+            Resource::Subscriptions => &self.subscriptions.search,
+            Resource::Consumers => &self.consumers.search,
+            Resource::Listening { .. } => &self.listening.search,
+        }
+    }
+
+    fn get_active_resource_search_mut(
+        &mut self,
+        active_resource: &Resource,
+    ) -> &mut Option<Search> {
+        match active_resource {
+            Resource::Tenants => &mut self.tenants.search,
+            Resource::Namespaces => &mut self.namespaces.search,
+            Resource::Topics => &mut self.topics.search,
+            Resource::Subscriptions => &mut self.subscriptions.search,
+            Resource::Consumers => &mut self.consumers.search,
+            Resource::Listening { .. } => &mut self.listening.search,
+        }
+    }
+
+    fn is_search_expecting_input(&self, active_resource: &Resource) -> bool {
+        self.get_active_resource_search(active_resource)
+            .as_ref()
+            .map(|s| s.expecting_input)
+            .unwrap_or(false)
+    }
+
+    fn backspace_search(&mut self, active_resource: &Resource) -> () {
+        let search = self.get_active_resource_search_mut(active_resource);
+
+        if let Some(search) = search {
+            if search.expecting_input {
+                search.value.pop();
+                self.apply_search(active_resource);
+            }
+        }
+    }
+
+    fn clear_search(&mut self, active_resource: &Resource) {
+        let search = self.get_active_resource_search_mut(active_resource);
+
+        if let Some(search) = search {
+            if search.expecting_input {
+                search.value = String::new();
+                self.apply_search(active_resource);
+            }
+        }
+    }
+
+    fn update_search(&mut self, active_resource: &Resource, char: char) {
+        let search = self.get_active_resource_search_mut(active_resource);
+
+        if let Some(search) = search {
+            if search.expecting_input {
+                search.value.push(char);
+                self.apply_search(active_resource);
+            }
+        }
+    }
+
+    fn apply_search(&mut self, active_resource: &Resource) {
+        match active_resource {
+            Resource::Tenants => self.tenants.filter(),
+            Resource::Namespaces => self.namespaces.filter(),
+            Resource::Topics => self.topics.filter(),
+            Resource::Subscriptions => self.subscriptions.filter(),
+            Resource::Consumers => self.consumers.filter(),
+            Resource::Listening { .. } => self.listening.filter(true),
         }
     }
 
@@ -354,7 +551,18 @@ impl Resources {
             Resource::Topics => self.topics.reset_search(),
             Resource::Subscriptions => self.subscriptions.reset_search(),
             Resource::Consumers => self.consumers.reset_search(),
-            Resource::Listening { .. } => (),
+            Resource::Listening { .. } => self.listening.reset_search(),
+        }
+    }
+
+    fn init_search(&mut self, active_resource: &Resource) {
+        match active_resource {
+            Resource::Tenants => self.tenants.init_search(),
+            Resource::Namespaces => self.namespaces.init_search(),
+            Resource::Topics => self.topics.init_search(),
+            Resource::Subscriptions => self.subscriptions.init_search(),
+            Resource::Consumers => self.consumers.init_search(),
+            Resource::Listening { .. } => self.listening.init_search(),
         }
     }
 
@@ -556,13 +764,11 @@ pub struct App {
     pub cluster_name: String,
     pub lgm_version: String,
     pub latest_lgm_version: Option<String>,
-    pub resource_search: Option<Search>,
 }
 
 #[derive(Clone)]
 pub struct DrawState {
     pub info_to_show: Option<InfoToShow>,
-    pub resource_search: Option<Search>,
     pub confirmation_modal: Option<ConfirmationModal>,
     pub input_modal: Option<InputModal>,
     pub active_resource: Resource,
@@ -576,7 +782,6 @@ impl From<&mut App> for DrawState {
     fn from(value: &mut App) -> Self {
         DrawState {
             info_to_show: value.info_to_show.clone(),
-            resource_search: value.resource_search.clone(),
             confirmation_modal: value.confirmation_modal.clone(),
             input_modal: value.input_modal.clone(),
             active_resource: value.active_resource.clone(),
@@ -610,13 +815,10 @@ pub async fn update<'a>(
                 }
                 // XXX: Allow only a subset of events if input is expected
                 AppEvent::Control(control_event)
-                    if (matches!(app.resources.listening.panel, SelectedPanel::Search)
-                        || app.input_modal.is_some()
+                    if (app.input_modal.is_some()
                         || app
-                            .resource_search
-                            .as_ref()
-                            .map(|s| s.expecting_input)
-                            .unwrap_or(false))
+                            .resources
+                            .is_search_expecting_input(&app.active_resource))
                         && matches!(
                             control_event,
                             ControlEvent::Yank
@@ -628,67 +830,26 @@ pub async fn update<'a>(
                         ) => {}
 
                 AppEvent::Control(ControlEvent::ClearInput) => {
-                    if matches!(app.resources.listening.panel, SelectedPanel::Search) {
-                        app.resources.listening.search = Some(String::new());
-                    } else {
-                        if let Some(search) = &mut app.resource_search {
-                            if search.expecting_input {
-                                search.value = String::new();
-                                app.resources.reset_search(&app.active_resource);
-                            }
-                        }
-                    }
+                    app.resources.clear_search(&app.active_resource);
                 }
                 AppEvent::Input(input) => {
-                    if matches!(app.resources.listening.panel, SelectedPanel::Search) {
-                        if let Resource::Listening { .. } = &app.active_resource {
-                            let char = match input {
-                                KeyCode::Char(char) if char != '/' => Some(char),
-                                _ => None,
-                            };
-
-                            if let Some(char) = char {
-                                app.resources.listening.search = app
-                                    .resources
-                                    .listening
-                                    .search
-                                    .as_ref()
-                                    .map(|current_search| format!("{}{}", current_search, char));
-                            }
-
-                            app.resources.listening.filter_messages(true);
-                        }
-                    }
-
                     if let Some(input_modal) = &mut app.input_modal {
-                        let char = match input {
+                        match input {
                             KeyCode::Char(char)
                                 if input_modal.is_input_numeric && char.is_numeric() =>
                             {
-                                Some(char)
+                                input_modal.input.push(char)
                             }
-                            _ => None,
+                            _ => {}
                         };
-
-                        if let Some(char) = char {
-                            input_modal.input = format!("{}{}", input_modal.input, char)
-                        }
                     }
 
-                    if let Some(search) = &mut app.resource_search {
-                        if search.expecting_input {
-                            let char = match input {
-                                KeyCode::Char(char) => Some(char),
-                                _ => None,
-                            };
-
-                            if let Some(char) = char {
-                                search.value = format!("{}{}", search.value, char);
-                                app.resources
-                                    .apply_search(&app.active_resource, &search.value);
-                            }
-                        }
-                    }
+                    match input {
+                        KeyCode::Char(char) => app
+                            .resources
+                            .update_search(&app.active_resource, char),
+                        _ => {}
+                    };
                 }
 
                 AppEvent::Control(ControlEvent::Skip) => {
@@ -801,47 +962,19 @@ pub async fn update<'a>(
                     app.confirmation_modal = None;
                 }
                 AppEvent::Control(ControlEvent::Search) => {
-                    if let Resource::Listening { .. } = &mut app.active_resource {
-                        match &app.resources.listening.panel {
-                            SelectedPanel::Left => match &app.resources.listening.search {
-                                Some(_) => app.resources.listening.panel = SelectedPanel::Search,
-                                None => {
-                                    app.resources.listening.panel = SelectedPanel::Search;
-                                    app.resources.listening.search = Some(String::new());
-                                }
-                            },
-                            SelectedPanel::Right { .. } => match &app.resources.listening.search {
-                                Some(_) => app.resources.listening.panel = SelectedPanel::Search,
-                                None => {
-                                    app.resources.listening.panel = SelectedPanel::Search;
-                                    app.resources.listening.search = Some(String::new());
-                                }
-                            },
-                            SelectedPanel::Search => match &app.resources.listening.search {
-                                Some(_) => {
-                                    app.resources.listening.panel = SelectedPanel::Left;
-                                    app.resources.listening.search = None;
-                                    app.resources.listening.filter_messages(true);
-                                }
-                                None => {
-                                    app.resources.listening.search = Some(String::new());
-                                }
-                            },
+                    match &mut app
+                        .resources
+                        .get_active_resource_search_mut(&app.active_resource)
+                    {
+                        Some(search) => {
+                            if search.expecting_input {
+                                app.resources.reset_search(&app.active_resource);
+                            } else {
+                                search.expecting_input = true
+                            }
                         }
-                    } else {
-                        // When not Listening
-                        match &mut app.resource_search {
-                            Some(search) => {
-                                if search.expecting_input {
-                                    app.resource_search = None;
-                                    app.resources.reset_search(&app.active_resource);
-                                } else {
-                                    search.expecting_input = true
-                                }
-                            }
-                            None => {
-                                app.resource_search = Some(Search::new());
-                            }
+                        None => {
+                            app.resources.init_search(&app.active_resource);
                         }
                     }
                 }
@@ -896,15 +1029,8 @@ pub async fn update<'a>(
                 AppEvent::Control(ControlEvent::CycleSide) => {
                     if let Resource::Listening { .. } = &app.active_resource {
                         app.resources.listening.panel = match &app.resources.listening.panel {
-                            SelectedPanel::Search => SelectedPanel::Left,
                             SelectedPanel::Left => SelectedPanel::Right { scroll_offset: 0 },
-                            SelectedPanel::Right { .. } => {
-                                if app.resources.listening.search.is_some() {
-                                    SelectedPanel::Search
-                                } else {
-                                    SelectedPanel::Left
-                                }
-                            }
+                            SelectedPanel::Right { .. } => SelectedPanel::Left,
                         };
                     }
                 }
@@ -942,8 +1068,6 @@ pub async fn update<'a>(
                             app.resources.listening.cursor = None;
                             app.resources.listening.messages = vec![];
                             app.resources.listening.filtered_messages = vec![];
-                            app.resources.listening.search = None;
-                            app.resource_search = None;
                             app.resources.reset_search(&app.active_resource);
                             let new_pulsar = app.pulsar.client.clone();
                             let new_sender = app.pulsar.sender.clone();
@@ -986,63 +1110,27 @@ pub async fn update<'a>(
                 }
 
                 AppEvent::Control(ControlEvent::BackSpace) => {
+                    let _ = &app
+                        .resources
+                        .backspace_search(&app.active_resource);
+
                     if let Resource::Listening { .. } = &app.active_resource {
                         if let Some(input_modal) = &mut app.input_modal {
-                            let len = input_modal.input.len();
-                            let new = if len > 0 {
-                                input_modal.input[0..len - 1].to_owned()
-                            } else {
-                                String::new()
-                            };
-                            input_modal.input = new;
-                        } else if matches!(app.resources.listening.panel, SelectedPanel::Search) {
-                            app.resources.listening.search = match &app.resources.listening.search {
-                                Some(current_search) => {
-                                    let len = current_search.len();
-                                    if len > 0 {
-                                        Some(current_search[0..len - 1].to_owned())
-                                    } else {
-                                        Some("".to_string())
-                                    }
-                                }
-                                None => None,
-                            };
-                            app.resources.listening.filter_messages(true);
+                            input_modal.input.pop();
                         }
                     }
 
                     if let Resource::Subscriptions { .. } = &app.active_resource {
                         if let Some(input_modal) = &mut app.input_modal {
-                            let len = input_modal.input.len();
-                            let new = if len > 0 {
-                                input_modal.input[0..len - 1].to_owned()
-                            } else {
-                                String::new()
-                            };
-                            input_modal.input = new;
-                        }
-                    }
-
-                    if let Some(search) = &mut app.resource_search {
-                        if search.expecting_input {
-                            let len = search.value.len();
-                            if len > 0 {
-                                search.value = search.value[0..len - 1].to_owned()
-                            } else {
-                                search.value = String::new()
-                            };
-
-                            app.resources
-                                .apply_search(&app.active_resource, &search.value)
+                            input_modal.input.pop();
                         }
                     }
                 }
 
                 AppEvent::Control(ControlEvent::Back | ControlEvent::Esc) => {
-                    if let Some(..) = &mut app.resource_search {
-                        app.resource_search = None;
-                        app.resources.reset_search(&app.active_resource);
-                    } else if app.input_modal.is_some() {
+                    app.resources.reset_search(&app.active_resource);
+
+                    if app.input_modal.is_some() {
                         app.input_modal = None;
                     } else if app.confirmation_modal.is_some() {
                         app.confirmation_modal = None;
@@ -1060,8 +1148,7 @@ pub async fn update<'a>(
                                             .tenants
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Tenants;
-                                        app.resource_search = None;
-                                        app.resources.reset_search(&app.active_resource);
+                                        app.resources.tenants.filter();
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -1086,8 +1173,7 @@ pub async fn update<'a>(
                                             .namespaces
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Namespaces;
-                                        app.resource_search = None;
-                                        app.resources.reset_search(&app.active_resource);
+                                        app.resources.namespaces.filter();
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -1110,8 +1196,7 @@ pub async fn update<'a>(
                                     Ok(topics) => {
                                         app.resources.topics.topics = topics;
                                         app.active_resource = Resource::Topics;
-                                        app.resource_search = None;
-                                        app.resources.reset_search(&app.active_resource);
+                                        app.resources.topics.filter();
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -1139,8 +1224,7 @@ pub async fn update<'a>(
                                             .subscriptions
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Subscriptions;
-                                        app.resource_search = None;
-                                        app.resources.reset_search(&app.active_resource);
+                                        app.resources.subscriptions.filter();
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -1152,50 +1236,37 @@ pub async fn update<'a>(
                             }
 
                             Resource::Listening { .. } => {
-                                match &app.resources.listening.panel {
-                                    SelectedPanel::Search => {
-                                        app.resources.listening.panel = SelectedPanel::Left;
+                                let topics = pulsar_admin::fetch_topics(
+                                    &app.resources.selected_tenant().unwrap().name,
+                                    &app.resources.selected_namespace().unwrap().name,
+                                    &app.pulsar_admin_cfg,
+                                )
+                                .await;
+
+                                match topics {
+                                    Ok(topics) => {
+                                        app.resources.topics.topics = topics;
+                                        app.resources
+                                            .topics
+                                            .topics
+                                            .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.resources.listening.search = None;
-                                        app.resources.listening.filtered_messages =
-                                            app.resources.listening.messages.clone();
-                                    }
-                                    _ => {
-                                        let topics = pulsar_admin::fetch_topics(
-                                            &app.resources.selected_tenant().unwrap().name,
-                                            &app.resources.selected_namespace().unwrap().name,
-                                            &app.pulsar_admin_cfg,
-                                        )
-                                        .await;
+                                        app.resources.listening.panel = SelectedPanel::Left;
+                                        app.active_resource = Resource::Topics;
+                                        app.resources.topics.filter();
 
-                                        match topics {
-                                            Ok(topics) => {
-                                                app.resources.topics.topics = topics;
-                                                app.resources
-                                                    .topics
-                                                    .topics
-                                                    .sort_by(|a, b| a.name.cmp(&b.name));
-                                                app.resources.listening.search = None;
-                                                app.resources.listening.panel = SelectedPanel::Left;
-                                                app.active_resource = Resource::Topics;
-                                                app.resource_search = None;
-                                                app.resources.reset_search(&app.active_resource);
-
-                                                if let Some(sender) =
-                                                    app.pulsar.active_sub_handle.take()
-                                                {
-                                                    sender.send(()).map_err(|()| { anyhow!( "Failed to send termination singal to subscription")
+                                        if let Some(sender) = app.pulsar.active_sub_handle.take() {
+                                            sender.send(()).map_err(|()| { anyhow!( "Failed to send termination singal to subscription")
                                                 })?
-                                                };
-                                            }
-                                            Err(err) => {
-                                                show_error_msg(
-                                                    app,
-                                                    format!("Failed to fetch topics :[ {:?}", err),
-                                                );
-                                            }
-                                        }
+                                        };
                                     }
-                                };
+                                    Err(err) => {
+                                        show_error_msg(
+                                            app,
+                                            format!("Failed to fetch topics :[ {:?}", err),
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
@@ -1207,7 +1278,7 @@ pub async fn update<'a>(
                             properties: event.properties,
                         });
 
-                        app.resources.listening.filter_messages(false);
+                        app.resources.listening.filter(false);
 
                         if app.resources.listening.cursor.is_none() {
                             app.resources.listening.cursor = Some(0)
@@ -1217,7 +1288,10 @@ pub async fn update<'a>(
                 AppEvent::Control(ControlEvent::Terminate) => break,
                 AppEvent::Control(ControlEvent::Enter) => {
                     app.confirmation_modal = None;
-                    if let Some(search) = &mut app.resource_search {
+                    if let Some(search) = &mut app
+                        .resources
+                        .get_active_resource_search_mut(&app.active_resource)
+                    {
                         if search.expecting_input {
                             search.expecting_input = false;
                             continue;
@@ -1244,8 +1318,7 @@ pub async fn update<'a>(
                                             .namespaces
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Namespaces;
-                                        app.resource_search = None;
-                                        app.resources.reset_search(&app.active_resource);
+                                        app.resources.namespaces.filter();
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -1275,8 +1348,7 @@ pub async fn update<'a>(
                                             .topics
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Topics;
-                                        app.resource_search = None;
-                                        app.resources.reset_search(&app.active_resource);
+                                        app.resources.topics.filter();
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -1358,8 +1430,7 @@ pub async fn update<'a>(
                                             .consumers
                                             .sort_by(|a, b| a.name.cmp(&b.name));
                                         app.active_resource = Resource::Consumers;
-                                        app.resource_search = None;
-                                        app.resources.reset_search(&app.active_resource);
+                                        app.resources.consumers.filter();
                                     }
                                     Err(err) => {
                                         show_error_msg(
@@ -1405,8 +1476,6 @@ pub async fn update<'a>(
                                 };
 
                                 app.input_modal = None;
-                            } else if let SelectedPanel::Search = &app.resources.listening.panel {
-                                app.resources.listening.panel = SelectedPanel::Left
                             }
                         }
                         Resource::Consumers => {}
@@ -1414,11 +1483,7 @@ pub async fn update<'a>(
                 }
             }
         } else {
-            //let now = Instant::now();
             terminal.draw(|f| draw::draw(f, app.into()))?;
-            //let end = Instant::now();
-            //let elapsed = (end - now).as_millis();
-            //log::info!("draw took {elapsed}ms");
         }
     }
 
@@ -1467,8 +1532,7 @@ async fn refresh_subscriptions(app: &mut App) {
                 .subscriptions
                 .sort_by(|a, b| a.name.cmp(&b.name));
             app.active_resource = Resource::Subscriptions;
-            app.resource_search = None;
-            app.resources.reset_search(&app.active_resource);
+            app.resources.subscriptions.filter();
         }
         Err(err) => {
             show_error_msg(app, format!("Failed to fetch subscriptions :[ {:?}", err));
