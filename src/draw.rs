@@ -1,5 +1,3 @@
-use std::usize;
-
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Stylize};
 use ratatui::text::{Line, Span, Text};
@@ -34,7 +32,7 @@ pub fn draw(frame: &mut Frame, draw_state: DrawState) {
         .latest_lgm_version
         .clone()
         .unwrap_or("???".to_string());
-    let latest_lgm_version = if &latest_lgm_version == &draw_state.lgm_version {
+    let latest_lgm_version = if latest_lgm_version == draw_state.lgm_version {
         "".to_string()
     } else {
         format!("({})", &latest_lgm_version)
@@ -526,16 +524,17 @@ fn to_json_string(body: Vec<u8>) -> String {
 }
 
 fn make_layout(frame: &mut Frame, draw_state: &DrawState) -> LayoutChunks {
-    let search_contstraint = if let Some(_) = &draw_state
+    let search_contstraint = if draw_state
         .resources
         .get_active_resource_search(&draw_state.active_resource)
+        .is_some()
     {
         Constraint::Length(3)
     } else {
         Constraint::Length(0)
     };
 
-    let info_constraint = if let Some(_) = draw_state.info_to_show {
+    let info_constraint = if draw_state.info_to_show.is_some() {
         Constraint::Length(1)
     } else {
         Constraint::Length(0)

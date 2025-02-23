@@ -9,7 +9,6 @@ use itertools::Itertools;
 use pulsar::{Pulsar, TokioExecutor};
 use pulsar_admin_sdk::apis::configuration::Configuration;
 use std::io::Stdout;
-use std::usize;
 use std::{
     sync::{
         Arc,
@@ -52,13 +51,13 @@ impl Filterable<Tenant> for Tenants {
 }
 
 impl Tenants {
-    fn reset_search(&mut self) -> () {
+    fn reset_search(&mut self) {
         self.filtered_tenants = self.tenants.clone();
         reset_cursor(&self.filtered_tenants, &mut self.cursor);
         self.search = None;
     }
 
-    fn init_search(&mut self) -> () {
+    fn init_search(&mut self) {
         self.search = Some(Search::new());
     }
 }
@@ -90,13 +89,13 @@ impl Filterable<Namespace> for Namespaces {
 }
 
 impl Namespaces {
-    fn reset_search(&mut self) -> () {
+    fn reset_search(&mut self) {
         self.filtered_namespaces = self.namespaces.clone();
         reset_cursor(&self.filtered_namespaces, &mut self.cursor);
         self.search = None;
     }
 
-    fn init_search(&mut self) -> () {
+    fn init_search(&mut self) {
         self.search = Some(Search::new());
     }
 }
@@ -128,13 +127,13 @@ impl Filterable<Topic> for Topics {
 }
 
 impl Topics {
-    fn reset_search(&mut self) -> () {
+    fn reset_search(&mut self) {
         self.filtered_topics = self.topics.clone();
         reset_cursor(&self.filtered_topics, &mut self.cursor);
         self.search = None;
     }
 
-    fn init_search(&mut self) -> () {
+    fn init_search(&mut self) {
         self.search = Some(Search::new());
     }
 }
@@ -156,8 +155,8 @@ pub trait Filterable<T> {
         let filtered: Vec<T> = if let Some(search) = self.search() {
             self.all_items()
                 .iter()
-                .cloned()
                 .filter(|item| item.name().contains(&search.value))
+                .cloned()
                 .collect()
         } else {
             self.all_items().clone()
@@ -195,12 +194,12 @@ impl Filterable<Subscription> for Subscriptions {
 }
 
 impl Subscriptions {
-    fn reset_search(&mut self) -> () {
+    fn reset_search(&mut self) {
         self.filtered_subscriptions = self.subscriptions.clone();
         reset_cursor(&self.filtered_subscriptions, &mut self.cursor);
         self.search = None;
     }
-    fn init_search(&mut self) -> () {
+    fn init_search(&mut self) {
         self.search = Some(Search::new());
     }
 }
@@ -232,18 +231,18 @@ impl Filterable<Consumer> for Consumers {
 }
 
 impl Consumers {
-    fn reset_search(&mut self) -> () {
+    fn reset_search(&mut self) {
         self.filtered_consumers = self.consumers.clone();
         reset_cursor(&self.filtered_consumers, &mut self.cursor);
         self.search = None;
     }
 
-    fn init_search(&mut self) -> () {
+    fn init_search(&mut self) {
         self.search = Some(Search::new());
     }
 }
 
-fn reset_cursor<A>(coll: &Vec<A>, maybe_cursor: &mut Option<usize>) {
+fn reset_cursor<A>(coll: &[A], maybe_cursor: &mut Option<usize>) {
     *maybe_cursor = if let Some(cursor) = maybe_cursor {
         if coll.get(*cursor).is_some() {
             *maybe_cursor
@@ -267,13 +266,13 @@ pub struct Listening {
 }
 
 impl Listening {
-    fn reset_search(&mut self) -> () {
+    fn reset_search(&mut self) {
         self.filtered_messages = self.messages.clone();
         reset_cursor(&self.filtered_messages, &mut self.cursor);
         self.search = None;
     }
 
-    fn init_search(&mut self) -> () {
+    fn init_search(&mut self) {
         self.search = Some(Search::new());
     }
 
@@ -500,7 +499,7 @@ impl Resources {
             .unwrap_or(false)
     }
 
-    fn backspace_search(&mut self, active_resource: &Resource) -> () {
+    fn backspace_search(&mut self, active_resource: &Resource) {
         let search = self.get_active_resource_search_mut(active_resource);
 
         if let Some(search) = search {
@@ -800,7 +799,7 @@ pub struct PulsarApp {
     pub active_sub_handle: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
-pub async fn update<'a>(
+pub async fn update(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,
 ) -> anyhow::Result<()> {
@@ -844,11 +843,9 @@ pub async fn update<'a>(
                         };
                     }
 
-                    match input {
-                        KeyCode::Char(char) => app
-                            .resources
-                            .update_search(&app.active_resource, char),
-                        _ => {}
+                    if let KeyCode::Char(char) = input {
+                        app.resources
+                            .update_search(&app.active_resource, char)
                     };
                 }
 

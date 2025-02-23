@@ -131,7 +131,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
     let version_sender = sender.clone();
     //can we use tokio thread here?
     let _handle = thread::spawn(move || listen_input(control_sender));
-    let _ = tokio::spawn(async move { fetch_latest_version(version_sender).await });
+    let _ = tokio::spawn(async move { fetch_latest_version(version_sender).await }).await?;
     let namespaces: Vec<Namespace> = fetch_namespaces(&default_tenant, &conf).await?;
     let cluster_name: String = fetch_clusters(&conf)
         .await?
