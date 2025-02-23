@@ -6,7 +6,7 @@ description = "Pulsar cluster managment in terminal"
 license = "MIT"
 homepage = "https://github.com/bloznelis/lgm"
 repository = "https://github.com/bloznelis/lgm"
-edition = "2021"
+edition = "2024"
 keywords = ["pulsar", "terminal", "tui"]
 readme = "README.md"
 
