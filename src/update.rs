@@ -415,6 +415,33 @@ pub struct SubMessage {
     pub properties: Vec<String>,
 }
 
+impl SubMessage {
+    pub fn as_pretty_str(&self) -> String {
+        let body = Self::body_as_pretty_str(self);
+        let props = self.properties.join("\n");
+
+        format!("{props}\n\n{body}")
+    }
+
+    pub fn body_as_pretty_str(&self) -> String {
+        let pretty = serde_json::from_slice::<serde_json::Value>(&self.body)
+            .and_then(|json_value| serde_json::to_string_pretty(&json_value));
+
+        pretty.unwrap_or(
+            String::from_utf8(self.body.clone()).unwrap_or("can't decode the body".to_string()),
+        )
+    }
+
+    pub fn body_as_str(&self) -> String {
+        let pretty = serde_json::from_slice::<serde_json::Value>(&self.body)
+            .and_then(|json_value| serde_json::to_string(&json_value));
+
+        pretty.unwrap_or(
+            String::from_utf8(self.body.clone()).unwrap_or("can't decode the body".to_string()),
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ConfirmationModal {
     pub message: String,
@@ -1054,19 +1081,11 @@ pub async fn update(
                 AppEvent::Control(ControlEvent::Yank) => {
                     if let Resource::Listening { .. } = &app.active_resource {
                         if let Some(sub_message) = app.resources.selected_message() {
-                            let content = &sub_message.body;
                             let res = ClipboardContext::new()
                                 .map_err(|_| anyhow!("Failed to get the clipboard."))
                                 .and_then(|mut ctx| {
-                                    String::from_utf8(content.clone())
-                                        .map_err(|_| {
-                                            anyhow!("Failed to decode string content for clipboard")
-                                        })
-                                        .and_then(|string_content| {
-                                            ctx.set_contents(string_content).map_err(|_| {
-                                                anyhow!("Failed to copy to clipboard.")
-                                            })
-                                        })
+                                    ctx.set_contents(sub_message.as_pretty_str())
+                                        .map_err(|_| anyhow!("Failed to copy to clipboard."))
                                 });
 
                             match res {

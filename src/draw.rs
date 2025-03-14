@@ -423,7 +423,7 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
     let filtered_messages = &listening.filtered_messages;
 
     let content_list = List::new(filtered_messages.iter().map(|message| {
-        let str = to_json_string(message.body.clone());
+        let str = message.body_as_str().clone();
         if str.len() > horizontal_space {
             format!(
                 "{}...",
@@ -440,15 +440,11 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
 
     let mut state = ListState::default().with_selected(listening.cursor);
 
-    let message_body = listening
+    let content = listening
         .cursor
         .and_then(|cursor| filtered_messages.get(cursor))
-        .map(|message| to_pretty_json(message.body.clone()));
-
-    let message_properties = listening
-        .cursor
-        .and_then(|cursor| filtered_messages.get(cursor))
-        .map(|message| message.properties.join("\n"));
+        .map(|message| message.as_pretty_str())
+        .unwrap_or(String::from("nothing to show"));
 
     let preview_block = Block::default()
         .borders(Borders::ALL)
@@ -461,14 +457,6 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
         .title_alignment(Alignment::Center)
         .title_style(Style::default().fg(Color::Green))
         .padding(Padding::new(2, 2, 1, 1));
-
-    let content = message_properties
-        .and_then(|properties| {
-            message_body
-                .as_ref()
-                .map(|body| properties + "\n\n" + body)
-        })
-        .unwrap_or(String::from("nothing to show"));
 
     let text: Vec<Line<'_>> = content
         .lines()
@@ -507,20 +495,6 @@ fn draw_listening(frame: &mut Frame, layout: &LayoutChunks, draw_state: DrawStat
 
     frame.render_stateful_widget(content_list, left_rect, &mut state);
     frame.render_widget(preview_paragraph, right_rect);
-}
-
-fn to_pretty_json(body: Vec<u8>) -> String {
-    let pretty = serde_json::from_slice::<serde_json::Value>(&body)
-        .and_then(|json_value| serde_json::to_string_pretty(&json_value));
-
-    pretty.unwrap_or(String::from_utf8(body).unwrap_or("can't decode the body".to_string()))
-}
-
-fn to_json_string(body: Vec<u8>) -> String {
-    let pretty = serde_json::from_slice::<serde_json::Value>(&body)
-        .and_then(|json_value| serde_json::to_string(&json_value));
-
-    pretty.unwrap_or(String::from_utf8(body).unwrap_or("can't decode the body".to_string()))
 }
 
 fn make_layout(frame: &mut Frame, draw_state: &DrawState) -> LayoutChunks {
