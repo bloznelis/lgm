@@ -429,6 +429,26 @@ pub struct InputModal {
     pub is_input_numeric: bool,
 }
 
+impl InputModal {
+    pub fn pop_input(&mut self) {
+        self.input.pop();
+        self.update_suffix();
+    }
+
+    pub fn push_input(&mut self, char: char) {
+        self.input.push(char);
+        self.update_suffix();
+    }
+
+    fn update_suffix(&mut self) {
+        if self.input == "1" {
+            self.input_suffix = String::from(" hour");
+        } else {
+            self.input_suffix = String::from(" hours");
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ConfirmedCommand {
     CloseInfoMessage,
@@ -837,7 +857,7 @@ pub async fn update(
                             KeyCode::Char(char)
                                 if input_modal.is_input_numeric && char.is_numeric() =>
                             {
-                                input_modal.input.push(char)
+                                input_modal.push_input(char);
                             }
                             _ => {}
                         };
@@ -1114,6 +1134,12 @@ pub async fn update(
                     if let Resource::Listening { .. } = &app.active_resource {
                         if let Some(input_modal) = &mut app.input_modal {
                             input_modal.input.pop();
+
+                            if input_modal.input == "1" {
+                                input_modal.input_suffix = String::from(" hour");
+                            } else {
+                                input_modal.input_suffix = String::from(" hours");
+                            }
                         }
                     }
 
@@ -1363,41 +1389,43 @@ pub async fn update(
                         }
                         Resource::Subscriptions { .. } => {
                             if let Some(input_modal) = &app.input_modal {
-                                let numeric_input = input_modal
-                                    .input
-                                    .parse::<i64>()
-                                    .expect("Expecting numeric hours input");
-                                let hours =
-                                    TimeDelta::try_hours(numeric_input).expect("Expecting hours");
+                                if !input_modal.input.is_empty() {
+                                    let numeric_input = input_modal
+                                        .input
+                                        .parse::<i64>()
+                                        .expect("Expecting numeric hours input");
+                                    let hours = TimeDelta::try_hours(numeric_input)
+                                        .expect("Expecting hours");
 
-                                let result = pulsar_admin::reset_subscription(
-                                    app.resources
-                                        .selected_tenant_name()
-                                        .expect("tenant must be set"),
-                                    app.resources
-                                        .selected_namespace_name()
-                                        .expect("namespace must be set"),
-                                    app.resources
-                                        .selected_topic_name()
-                                        .expect("namespace must be set"),
-                                    app.resources
-                                        .selected_subscription_name()
-                                        .expect("subscription must be set"),
-                                    &app.pulsar_admin_cfg,
-                                    hours,
-                                )
-                                .await;
+                                    let result = pulsar_admin::reset_subscription(
+                                        app.resources
+                                            .selected_tenant_name()
+                                            .expect("tenant must be set"),
+                                        app.resources
+                                            .selected_namespace_name()
+                                            .expect("namespace must be set"),
+                                        app.resources
+                                            .selected_topic_name()
+                                            .expect("namespace must be set"),
+                                        app.resources
+                                            .selected_subscription_name()
+                                            .expect("subscription must be set"),
+                                        &app.pulsar_admin_cfg,
+                                        hours,
+                                    )
+                                    .await;
 
-                                if let Err(err) = result {
-                                    show_error_msg(app, err.to_string());
-                                } else {
-                                    show_info_msg(
-                                        app,
-                                        format!("{} hours seeked", numeric_input).as_ref(),
-                                    );
-                                };
+                                    if let Err(err) = result {
+                                        show_error_msg(app, err.to_string());
+                                    } else {
+                                        show_info_msg(
+                                            app,
+                                            format!("{} hours seeked", numeric_input).as_ref(),
+                                        );
+                                    };
 
-                                app.input_modal = None;
+                                    app.input_modal = None;
+                                }
                             } else if let Some(subscription) = app.resources.selected_subscription()
                             {
                                 let consumers = pulsar_admin::fetch_consumers(
@@ -1440,39 +1468,41 @@ pub async fn update(
                         }
                         Resource::Listening { sub_name } => {
                             if let Some(input_modal) = &app.input_modal {
-                                let numeric_input = input_modal
-                                    .input
-                                    .parse::<i64>()
-                                    .expect("Expecting numeric hours input");
-                                let hours =
-                                    TimeDelta::try_hours(numeric_input).expect("Expecting hours");
+                                if !input_modal.input.is_empty() {
+                                    let numeric_input = input_modal
+                                        .input
+                                        .parse::<i64>()
+                                        .expect("Expecting numeric hours input");
+                                    let hours = TimeDelta::try_hours(numeric_input)
+                                        .expect("Expecting hours");
 
-                                let result = pulsar_admin::reset_subscription(
-                                    app.resources
-                                        .selected_tenant_name()
-                                        .expect("tenant must be set"),
-                                    app.resources
-                                        .selected_namespace_name()
-                                        .expect("namespace must be set"),
-                                    app.resources
-                                        .selected_topic_name()
-                                        .expect("namespace must be set"),
-                                    &sub_name,
-                                    &app.pulsar_admin_cfg,
-                                    hours,
-                                )
-                                .await;
+                                    let result = pulsar_admin::reset_subscription(
+                                        app.resources
+                                            .selected_tenant_name()
+                                            .expect("tenant must be set"),
+                                        app.resources
+                                            .selected_namespace_name()
+                                            .expect("namespace must be set"),
+                                        app.resources
+                                            .selected_topic_name()
+                                            .expect("namespace must be set"),
+                                        &sub_name,
+                                        &app.pulsar_admin_cfg,
+                                        hours,
+                                    )
+                                    .await;
 
-                                if let Err(err) = result {
-                                    show_error_msg(app, err.to_string());
-                                } else {
-                                    show_info_msg(
-                                        app,
-                                        format!("{} hours seeked", numeric_input).as_ref(),
-                                    );
-                                };
+                                    if let Err(err) = result {
+                                        show_error_msg(app, err.to_string());
+                                    } else {
+                                        show_info_msg(
+                                            app,
+                                            format!("{} hours seeked", numeric_input).as_ref(),
+                                        );
+                                    };
 
-                                app.input_modal = None;
+                                    app.input_modal = None;
+                                }
                             }
                         }
                         Resource::Consumers => {}
