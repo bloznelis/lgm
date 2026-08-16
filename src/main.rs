@@ -19,6 +19,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use std::{
     io,
+    panic,
     sync::{
         mpsc::{channel, Receiver, Sender},
         Arc,
@@ -31,6 +32,7 @@ use update::{
 };
 
 use crossterm::{
+    cursor::Show,
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -202,6 +204,16 @@ async fn run(args: Args) -> anyhow::Result<()> {
     enable_raw_mode()?;
 
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
+
+    // Install a panic hook that restores the terminal (disables raw mode and
+    // leaves the alternate screen) before the process exits, so a crash
+    // doesn't leave the user with a broken screen.
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, Show);
+        original_hook(info);
+    }));
 
     let result = update(&mut terminal, &mut app).await;
 
